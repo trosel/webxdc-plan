@@ -725,7 +725,13 @@ function metadata(s) {
 function shortDate(iso) {
   const d = new Date(iso);
   if (isNaN(d)) return "";
-  return d.toLocaleDateString(undefined, { weekday: "short", month: "numeric", day: "numeric" });
+  return d.toLocaleString(undefined, { 
+    weekday: "short", 
+    month: "numeric", 
+    day: "numeric",
+    hour: "numeric", 
+    minute: "2-digit" 
+  });
 }
 
 /* ─────────────────────────────────────────────────────────────
@@ -813,7 +819,7 @@ function applyUpdate(u) {
    SEND HELPERS
    ───────────────────────────────────────────────────────────── */
 
-function send(payload, info, projectedStateMaybe) {
+function send(payload, info, projectedStateMaybe, notify) {
   payload.senderAddr = mySelfAddr;
   payload.senderName = mySelfName;
 
@@ -841,8 +847,15 @@ function send(payload, info, projectedStateMaybe) {
 
   const u = {
     payload,
-    summary: meta.summary,
+    // 'info' adds a text line in the chat bubble history
+    info: meta.summary
   };
+
+  if (notify) {
+    // 'notify' triggers the actual system sound/vibration/banner
+    u.notify = { "*": meta.summary };
+  }
+
   if (meta.document) u.document = meta.document;
   if (info) u.info = info;
   // Add stage as a side-channel hint to the payload itself for downstream consumers.
@@ -1233,7 +1246,7 @@ function openEditModal() {
       const changedSlots = draft.slots.filter((s, i) => s.datetime !== state.slots[i].datetime);
       if (changedSlots.length) changed.slots = changedSlots;
       if (Object.keys(changed).length) {
-        send({ type: "edit", ...changed }, `${mySelfName} edited the plan`);
+        send({ type: "edit", ...changed }, `The ${state.title} plan changed 🕵️`, true);
       }
       closeEditModal();
     }
@@ -1479,8 +1492,8 @@ function sendRsvp(status) {
   RT.broadcast({ kind: "rsvp-hint", status });
   live.justTapped = { kind: "rsvp", key: status };
   setTimeout(() => { live.justTapped = null; scheduleRender(); }, 500);
-  const label = status === "going" ? "is in" : status === "maybe" ? "is a maybe" : "is out";
-  send({ type: "rsvp", status }, `${mySelfName} ${label}`);
+  const label = status === "going" ? "is down 🙋 for" : status === "maybe" ? "is a maybe 🤔 for" : "is a no 🙅 for";
+  send({ type: "rsvp", status }, `${mySelfName} ${label} ${state.title}`, true);
 }
 
 function lockSlot(slotId) {
@@ -1489,7 +1502,7 @@ function lockSlot(slotId) {
   live.justLocked = true;
   showToast("Locked in");
   setTimeout(() => { live.justLocked = false; scheduleRender(); }, 1300);
-  send({ type: "lock", slotId }, `Plan locked: ${fmtDateTime(slot.datetime)}`);
+  send({ type: "lock", slotId }, `${state.title} locked: ${fmtDateTime(slot.datetime)} 😤`, true);
 }
 
 function unlockPlan() {
@@ -1499,11 +1512,11 @@ function unlockPlan() {
 
 function cancelPlan() {
   if (!confirm("Cancel this plan? Everyone will see it's off.")) return;
-  send({ type: "cancel" }, `${mySelfName} cancelled the plan`);
+  send({ type: "cancel" }, `${state.title} is cancelled 😭`, true);
 }
 
 function uncancelPlan() {
-  send({ type: "uncancel" }, `${mySelfName} brought the plan back`);
+  send({ type: "uncancel" }, `${state.title} is back on 😀`, true);
 }
 
 /* ─────────────────────────────────────────────────────────────
