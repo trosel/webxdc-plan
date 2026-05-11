@@ -1,0 +1,1589 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>Plan</title>
+<script src="webxdc.js"></script>
+<style>
+  :root {
+    --bg: #14171a;
+    --bg-elev: #1c2025;
+    --bg-elev-2: #242830;
+    --ink: #ecedef;
+    --ink-dim: #a8acb3;
+    --ink-faint: #6b7079;
+    --accent: #d97757;
+    --accent-glow: #e89580;
+    --ash: #3a3f47;
+    --line: #2a2e35;
+    --going: #5fa37a;
+    --maybe: #c4954a;
+    --no: #a35858;
+    --shadow: 0 2px 12px rgba(0,0,0,.4);
+    --radius: 14px;
+  }
+  @media (prefers-color-scheme: light) {
+    :root {
+      --bg: #f6f5f2;
+      --bg-elev: #ffffff;
+      --bg-elev-2: #ecebe6;
+      --ink: #1a1d22;
+      --ink-dim: #565a62;
+      --ink-faint: #98a0a8;
+      --accent: #c25a36;
+      --accent-glow: #d97757;
+      --ash: #cdd2da;
+      --line: #e3e5e9;
+      --going: #4a7a5a;
+      --maybe: #a8761a;
+      --no: #9a4f4f;
+      --shadow: 0 2px 10px rgba(20,30,40,.08);
+    }
+  }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body {
+    margin: 0; padding: 0;
+    background: var(--bg);
+    color: var(--ink);
+    font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", system-ui, sans-serif;
+    font-size: 15px;
+    line-height: 1.5;
+    min-height: 100vh;
+    overscroll-behavior-y: contain;
+  }
+  body {
+    padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+  }
+  .app { max-width: 560px; margin: 0 auto; padding: 16px 16px 40px; }
+
+  /* ─── draft state ─── */
+  .draft-card {
+    background: var(--bg-elev);
+    border-radius: var(--radius);
+    padding: 24px 20px;
+    border: 1px solid var(--line);
+    box-shadow: var(--shadow);
+  }
+  .draft-card h1 {
+    font-family: "Cochin", "Hoefler Text", Georgia, serif;
+    font-weight: 500;
+    font-style: italic;
+    font-size: 26px;
+    margin: 0 0 4px;
+    color: var(--accent-glow);
+    letter-spacing: -.01em;
+  }
+  .draft-card .sub { color: var(--ink-dim); font-size: 14px; margin-bottom: 22px; }
+
+  label {
+    display: block;
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: .12em;
+    color: var(--ink-faint);
+    margin: 16px 0 6px;
+    font-weight: 600;
+  }
+  input[type="text"], input[type="datetime-local"], textarea {
+    width: 100%;
+    background: var(--bg);
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    padding: 11px 13px;
+    color: var(--ink);
+    font-family: inherit;
+    font-size: 15px;
+    transition: border-color .15s;
+  }
+  input:focus, textarea:focus { outline: none; border-color: var(--accent); }
+  textarea { resize: vertical; min-height: 60px; }
+
+  .time-slots { display: flex; flex-direction: column; gap: 8px; }
+  .time-slot-row { display: flex; gap: 8px; align-items: center; }
+  .time-slot-row input { flex: 1; }
+  .slot-remove {
+    background: transparent; border: 1px solid var(--line);
+    color: var(--ink-faint); border-radius: 8px;
+    width: 36px; height: 36px; cursor: pointer;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 18px; padding: 0;
+  }
+  @media (hover: hover) { .slot-remove:hover { color: var(--no); border-color: var(--no); } }
+
+  .add-time {
+    background: transparent; border: 1px dashed var(--line);
+    color: var(--ink-dim); padding: 9px;
+    border-radius: 10px; cursor: pointer;
+    font-family: inherit; font-size: 13px;
+    margin-top: 8px; width: 100%;
+    transition: all .15s;
+  }
+  @media (hover: hover) { .add-time:hover { color: var(--accent); border-color: var(--accent); } }
+
+  .btn-primary {
+    width: 100%;
+    background: var(--accent);
+    color: #14171a;
+    border: none;
+    padding: 14px;
+    border-radius: 12px;
+    font-family: inherit;
+    font-size: 15px;
+    font-weight: 600;
+    letter-spacing: .01em;
+    cursor: pointer;
+    margin-top: 24px;
+    box-shadow: 0 1px 0 rgba(255,255,255,.15) inset, 0 4px 14px rgba(217,119,87,.3);
+    transition: transform .1s, box-shadow .15s;
+  }
+  .btn-primary:active { transform: scale(.98); }
+  .btn-primary:disabled { opacity: .4; cursor: not-allowed; box-shadow: none; }
+
+  /* ─── plan view ─── */
+  .plan-header {
+    text-align: center;
+    padding: 12px 0 20px;
+    position: relative;
+  }
+  .host-strip {
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    background: var(--bg-elev);
+    padding: 6px 14px 6px 6px;
+    border-radius: 999px;
+    border: 1px solid var(--line);
+    margin-bottom: 18px;
+    font-size: 13px;
+    color: var(--ink-dim);
+  }
+  .host-strip .avatar { width: 28px; height: 28px; font-size: 12px; }
+  .host-strip strong { color: var(--ink); font-weight: 500; }
+
+  .presence-strip {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    gap: 4px;
+    margin-bottom: 12px;
+    min-height: 14px;
+    font-size: 11px;
+    color: var(--ink-faint);
+    text-transform: uppercase;
+    letter-spacing: .1em;
+  }
+  .presence-strip .dot {
+    width: 6px; height: 6px;
+    background: var(--going);
+    border-radius: 50%;
+    box-shadow: 0 0 6px var(--going);
+    animation: pulse 2s ease-in-out infinite;
+  }
+
+  .plan-title-wrap {
+    display: flex; align-items: flex-start; gap: 8px;
+    justify-content: center;
+    margin: 0 auto 12px;
+  }
+  .plan-title {
+    font-family: "Cochin", "Hoefler Text", Georgia, serif;
+    font-weight: 500;
+    font-size: 32px;
+    line-height: 1.15;
+    margin: 0;
+    color: var(--ink);
+    letter-spacing: -.015em;
+    text-align: center;
+  }
+  .pencil-btn {
+    background: transparent;
+    border: none;
+    cursor: pointer;
+    color: var(--ink-faint);
+    padding: 4px;
+    border-radius: 6px;
+    display: inline-flex;
+    align-items: center;
+    transition: color .15s, background .15s;
+  }
+  @media (hover: hover) { .pencil-btn:hover { color: var(--accent); background: var(--bg-elev); } }
+  .pencil-btn svg { width: 14px; height: 14px; }
+
+  .editing-indicator {
+    font-size: 11px;
+    color: var(--accent);
+    text-transform: uppercase;
+    letter-spacing: .1em;
+    margin-bottom: 8px;
+    text-align: center;
+    font-style: italic;
+  }
+
+  .plan-meta {
+    color: var(--ink-dim);
+    font-size: 14px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    align-items: center;
+  }
+  .plan-meta .row { display: flex; align-items: center; gap: 8px; }
+  .plan-meta .ic { width: 14px; height: 14px; color: var(--accent); flex-shrink: 0; }
+  .plan-notes {
+    margin-top: 14px;
+    color: var(--ink-dim);
+    font-size: 14px;
+    font-style: italic;
+    line-height: 1.55;
+    max-width: 90%;
+    margin-left: auto;
+    margin-right: auto;
+  }
+  .cancelled-banner, .past-banner {
+    border: 1px solid;
+    padding: 8px 14px;
+    border-radius: 8px;
+    font-size: 13px;
+    text-align: center;
+    margin: 0 0 16px;
+    text-transform: uppercase;
+    letter-spacing: .1em;
+    font-weight: 600;
+  }
+  .cancelled-banner {
+    background: rgba(138,74,74,.15);
+    border-color: var(--no);
+    color: var(--no);
+  }
+  .past-banner {
+    background: rgba(122,108,90,.12);
+    border-color: var(--ink-faint);
+    color: var(--ink-dim);
+  }
+
+  /* dim everything when past */
+  .past-mode .plan-title,
+  .past-mode .plan-meta,
+  .past-mode .plan-notes,
+  .past-mode .vote-slot,
+  .past-mode .rsvp-group {
+    opacity: .72;
+  }
+
+  /* ─── edit modal ─── */
+  .modal-overlay {
+    position: fixed; inset: 0;
+    background: rgba(0,0,0,.6);
+    display: flex; align-items: flex-end; justify-content: center;
+    z-index: 100;
+    animation: fadein .15s ease-out;
+  }
+  @keyframes fadein { from { opacity: 0; } to { opacity: 1; } }
+  @keyframes slideup { from { transform: translateY(20px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+  @media (min-width: 600px) {
+    .modal-overlay { align-items: center; }
+  }
+  .modal {
+    background: var(--bg-elev);
+    border-radius: var(--radius) var(--radius) 0 0;
+    border: 1px solid var(--line);
+    border-bottom: none;
+    padding: 20px;
+    width: 100%;
+    max-width: 560px;
+    max-height: 90vh;
+    overflow-y: auto;
+    animation: slideup .2s ease-out;
+  }
+  @media (min-width: 600px) {
+    .modal { border-radius: var(--radius); border-bottom: 1px solid var(--line); }
+  }
+  .modal h2 {
+    font-family: "Cochin", "Hoefler Text", Georgia, serif;
+    font-style: italic;
+    font-weight: 500;
+    font-size: 22px;
+    margin: 0 0 4px;
+    color: var(--accent-glow);
+  }
+  .modal-actions {
+    display: flex; gap: 8px;
+    margin-top: 20px;
+  }
+  .modal-actions button {
+    flex: 1;
+    padding: 12px;
+    border-radius: 10px;
+    font-family: inherit;
+    font-size: 14px;
+    cursor: pointer;
+    border: 1px solid var(--line);
+    background: transparent;
+    color: var(--ink-dim);
+    transition: all .15s;
+  }
+  .modal-actions button.primary {
+    background: var(--accent);
+    color: #14171a;
+    border-color: var(--accent);
+    font-weight: 600;
+  }
+  .modal-actions button:active { transform: scale(.97); }
+
+  /* ─── divider ─── */
+  .divider {
+    display: flex; align-items: center; justify-content: center;
+    margin: 28px 0 18px;
+    gap: 10px;
+  }
+  .divider::before, .divider::after {
+    content: ""; flex: 1; height: 1px;
+    background: linear-gradient(to right, transparent, var(--line), transparent);
+  }
+  .divider span {
+    color: var(--ink-faint);
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: .25em;
+    font-weight: 600;
+  }
+
+  /* ─── voting section ─── */
+  .vote-slot {
+    background: var(--bg-elev);
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    padding: 14px;
+    margin-bottom: 10px;
+    transition: border-color .2s, transform .25s;
+  }
+  .vote-slot.winning {
+    border-color: var(--accent);
+    background: linear-gradient(135deg, rgba(217,119,87,.08), transparent);
+    box-shadow: 0 0 0 1px var(--accent), 0 4px 16px rgba(217,119,87,.15);
+  }
+  .vote-slot-header {
+    display: flex; justify-content: space-between; align-items: baseline;
+    margin-bottom: 10px;
+  }
+  .vote-slot-time {
+    font-family: "Cochin", "Hoefler Text", Georgia, serif;
+    font-size: 17px;
+    font-weight: 500;
+    color: var(--ink);
+  }
+  .vote-slot-count { font-size: 12px; color: var(--ink-faint); font-variant-numeric: tabular-nums; }
+  .vote-buttons {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    gap: 6px;
+    margin-bottom: 10px;
+  }
+  .vote-btn {
+    background: var(--bg);
+    border: 1px solid var(--line);
+    color: var(--ink-dim);
+    padding: 8px;
+    border-radius: 8px;
+    font-family: inherit;
+    font-size: 13px;
+    cursor: pointer;
+    transition: all .15s;
+  }
+  .vote-btn:active { transform: scale(.96); }
+  .vote-btn.active[data-v="yes"] { background: var(--going); color: #fff; border-color: var(--going); }
+  .vote-btn.active[data-v="maybe"] { background: var(--maybe); color: #14171a; border-color: var(--maybe); }
+  .vote-btn.active[data-v="no"] { background: var(--no); color: #fff; border-color: var(--no); }
+  .voters-row {
+    display: flex; flex-wrap: wrap; gap: 4px;
+    min-height: 24px;
+  }
+  .lock-btn {
+    background: transparent;
+    border: 1px solid var(--accent);
+    color: var(--accent);
+    padding: 6px 12px;
+    border-radius: 8px;
+    font-family: inherit;
+    font-size: 12px;
+    cursor: pointer;
+    margin-top: 8px;
+    width: 100%;
+    transition: all .15s;
+  }
+  @media (hover: hover) { .lock-btn:hover { background: var(--accent); color: #14171a; } }
+
+  /* ─── RSVP section ─── */
+  .rsvp-buttons {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    gap: 8px;
+    margin-bottom: 20px;
+  }
+  .rsvp-btn {
+    background: var(--bg-elev);
+    border: 1px solid var(--line);
+    color: var(--ink);
+    padding: 14px 10px;
+    border-radius: 12px;
+    font-family: inherit;
+    font-size: 14px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all .15s;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+  }
+  .rsvp-btn .emoji { font-size: 20px; line-height: 1; }
+  .rsvp-btn:active { transform: scale(.97); }
+  .rsvp-btn.active[data-r="going"] { background: var(--going); border-color: var(--going); color: #fff; }
+  .rsvp-btn.active[data-r="maybe"] { background: var(--maybe); border-color: var(--maybe); color: #14171a; }
+  .rsvp-btn.active[data-r="not_going"] { background: var(--no); border-color: var(--no); color: #fff; }
+
+  .rsvp-group { margin-bottom: 16px; }
+  .rsvp-group-header {
+    display: flex; align-items: baseline; gap: 8px;
+    margin-bottom: 8px;
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: .14em;
+    color: var(--ink-faint);
+    font-weight: 600;
+  }
+  .rsvp-group-count { color: var(--ink); font-variant-numeric: tabular-nums; }
+  .rsvp-list { display: flex; flex-wrap: wrap; gap: 10px; }
+  .rsvp-list.compact { gap: 6px; }
+  .person {
+    display: flex; flex-direction: column; align-items: center;
+    gap: 4px;
+    width: 56px;
+    text-align: center;
+    position: relative;
+  }
+  .person.compact { flex-direction: row; width: auto; gap: 6px; }
+  .person.compact .name { font-size: 12px; }
+  .person.compact .avatar { width: 22px; height: 22px; font-size: 10px; }
+  .person .name {
+    font-size: 11px;
+    color: var(--ink-dim);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 56px;
+  }
+  .person.online .avatar::after {
+    content: "";
+    position: absolute;
+    bottom: -1px; right: -1px;
+    width: 10px; height: 10px;
+    background: var(--going);
+    border: 2px solid var(--bg);
+    border-radius: 50%;
+    box-shadow: 0 0 4px var(--going);
+  }
+  .person.compact.online .avatar::after { width: 7px; height: 7px; bottom: -1px; right: -1px; border-width: 1.5px; }
+
+  /* ─── avatar ─── */
+  .avatar {
+    width: 36px; height: 36px;
+    border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    color: #fff;
+    font-weight: 600;
+    font-size: 13px;
+    letter-spacing: .02em;
+    flex-shrink: 0;
+    border: 1.5px solid rgba(255,255,255,.08);
+    text-shadow: 0 1px 1px rgba(0,0,0,.2);
+    position: relative;
+  }
+  .voters-row .avatar { width: 22px; height: 22px; font-size: 10px; border-width: 1px; }
+  .avatar.flash {
+    animation: avatarflash .9s cubic-bezier(.34,1.56,.64,1);
+  }
+  @keyframes avatarflash {
+    0% { transform: scale(0); box-shadow: 0 0 0 0 var(--accent-glow); opacity: 0; }
+    60% { transform: scale(1.18); box-shadow: 0 0 0 6px rgba(217,119,87,0); opacity: 1; }
+    100% { transform: scale(1); }
+  }
+
+  /* RSVP/vote button "ignite" pulse when activated */
+  .rsvp-btn.just-tapped, .vote-btn.just-tapped {
+    animation: btnpulse .42s ease-out;
+  }
+  @keyframes btnpulse {
+    0% { transform: scale(1); }
+    35% { transform: scale(.94); }
+    100% { transform: scale(1); }
+  }
+  .rsvp-btn.just-tapped .emoji {
+    animation: emojipop .55s cubic-bezier(.34,1.56,.64,1);
+    display: inline-block;
+  }
+  @keyframes emojipop {
+    0% { transform: scale(1) rotate(0); }
+    50% { transform: scale(1.4) rotate(-8deg); }
+    100% { transform: scale(1) rotate(0); }
+  }
+
+  /* When a vote slot becomes "winning" — gentle flare */
+  .vote-slot.winning { animation: flare .6s ease-out; }
+  @keyframes flare {
+    0% { box-shadow: 0 0 0 1px var(--accent), 0 0 0 0 rgba(217,119,87,.4); }
+    60% { box-shadow: 0 0 0 1px var(--accent), 0 0 0 14px rgba(217,119,87,0); }
+    100% { box-shadow: 0 0 0 1px var(--accent), 0 4px 16px rgba(217,119,87,.15); }
+  }
+
+  /* Lock-in moment — title gets a brief soft glow */
+  .plan-title.just-locked {
+    animation: titleglow 1.2s ease-out;
+  }
+  @keyframes titleglow {
+    0%, 100% { text-shadow: none; }
+    40% { text-shadow: 0 0 16px rgba(217,119,87,.5), 0 0 32px rgba(217,119,87,.25); }
+  }
+
+  /* Toast for status moments */
+  .toast {
+    position: fixed;
+    left: 50%; bottom: 24px;
+    transform: translateX(-50%);
+    background: var(--accent);
+    color: #14171a;
+    padding: 10px 18px;
+    border-radius: 999px;
+    font-size: 13px;
+    font-weight: 600;
+    box-shadow: 0 6px 24px rgba(0,0,0,.4), 0 1px 0 rgba(255,255,255,.15) inset;
+    z-index: 200;
+    animation: toastin .4s cubic-bezier(.34,1.56,.64,1), toastout .3s ease-in 2.1s forwards;
+    pointer-events: none;
+  }
+  @keyframes toastin {
+    from { transform: translate(-50%, 30px); opacity: 0; }
+    to { transform: translate(-50%, 0); opacity: 1; }
+  }
+  @keyframes toastout {
+    to { transform: translate(-50%, 20px); opacity: 0; }
+  }
+
+  /* ─── footer actions ─── */
+  .footer-actions {
+    display: flex; gap: 8px;
+    margin-top: 24px;
+    padding-top: 18px;
+    border-top: 1px solid var(--line);
+    flex-wrap: wrap;
+  }
+  .footer-actions button {
+    flex: 1;
+    min-width: 100px;
+    background: transparent;
+    border: 1px solid var(--line);
+    color: var(--ink-dim);
+    padding: 10px;
+    border-radius: 10px;
+    font-family: inherit;
+    font-size: 13px;
+    cursor: pointer;
+    transition: all .15s;
+  }
+  @media (hover: hover) { .footer-actions button:hover { color: var(--ink); border-color: var(--ash); } }
+  @media (hover: hover) { .footer-actions button.danger:hover { color: var(--no); border-color: var(--no); } }
+
+  .hidden { display: none !important; }
+
+  @keyframes pulse {
+    0%, 100% { opacity: .6; }
+    50% { opacity: 1; }
+  }
+  .host-dot {
+    width: 6px; height: 6px;
+    background: var(--accent);
+    border-radius: 50%;
+    box-shadow: 0 0 8px var(--accent);
+    animation: pulse 2.4s ease-in-out infinite;
+  }
+
+  /* Respect users who prefer reduced motion — disable decorative animations,
+     keep state-change transitions but cut their dramatic flair. */
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after {
+      animation-duration: .01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: .01ms !important;
+    }
+    .avatar.flash { opacity: 1; transform: none; }
+    .toast { animation: none; }
+  }
+</style>
+</head>
+<body>
+<div class="app" id="app"></div>
+<div id="modal-root"></div>
+
+<script>
+"use strict";
+
+/* ─────────────────────────────────────────────────────────────
+   STATE
+   ───────────────────────────────────────────────────────────── */
+
+const state = {
+  created: false,
+  host: null,
+  title: "",
+  location: "",
+  notes: "",
+  slots: [],
+  isPoll: false,
+  lockedSlotId: null,
+  cancelled: false,
+  votes: {},
+  rsvps: {},
+  people: {},
+};
+
+// Live (realtime-only) state — not persisted.
+const live = {
+  presence: {},       // { addr: {name, lastSeen} }
+  editing: null,      // { addr, name, field } or null
+  recentVotes: {},    // { slotId-addr: timestamp } for flash animation
+  recentRsvps: {},    // { addr: timestamp }
+  justTapped: null,   // { kind: "rsvp"|"vote", key } — for local just-tapped animation
+  justLocked: false,  // briefly true after our own lock action
+  toast: null,        // { text, id } — auto-dismisses
+};
+
+let mySelfAddr = null;
+let mySelfName = null;
+let realtimeChannel = null;
+let modalEl = null;
+
+/* ─────────────────────────────────────────────────────────────
+   STAGE DERIVATION
+   ───────────────────────────────────────────────────────────── */
+
+function deriveStage(s) {
+  // Pre-creation state has no meaningful stage; only sent stages are
+  // voting / confirmed / past / cancelled.
+  if (!s.created) return null;
+  if (s.cancelled) return "cancelled";
+  if (s.lockedSlotId) {
+    const slot = s.slots.find(x => x.id === s.lockedSlotId);
+    if (slot && new Date(slot.datetime) < new Date()) return "past";
+    return "confirmed";
+  }
+  // Single-time plans: if the slot is in the past, treat as past.
+  if (!s.isPoll && s.slots[0]) {
+    if (new Date(s.slots[0].datetime) < new Date()) return "past";
+    return "confirmed";
+  }
+  return "voting"; // poll, no lock
+}
+
+function countByStatus(rsvps, status) {
+  return Object.values(rsvps).filter(r => r.status === status).length;
+}
+
+/* Compute {document, summary} from state. Both ~20 char budget. */
+function metadata(s) {
+  const stage = deriveStage(s);
+  const goingCount = countByStatus(s.rsvps, "going");
+
+  let summary = "";
+  switch (stage) {
+    case null: summary = ""; break;
+    case "cancelled": summary = "cancelled"; break;
+    case "voting": {
+      const totalVotes = Object.values(s.votes).reduce(
+        (n, v) => n + Object.values(v).filter(x => x.response === "yes").length, 0);
+      summary = totalVotes ? `voting · ${totalVotes} in` : "voting open";
+      break;
+    }
+    case "confirmed": {
+      const slot = s.lockedSlotId
+        ? s.slots.find(x => x.id === s.lockedSlotId)
+        : s.slots[0];
+      const dt = slot ? shortDate(slot.datetime) : "";
+      summary = goingCount
+        ? `${dt} · ${goingCount} going`
+        : dt;
+      break;
+    }
+    case "past": {
+      summary = goingCount ? `past · ${goingCount} came` : "past";
+      break;
+    }
+  }
+  return { document: s.title || "", summary };
+}
+
+function shortDate(iso) {
+  const d = new Date(iso);
+  if (isNaN(d)) return "";
+  return d.toLocaleDateString(undefined, { weekday: "short", month: "numeric", day: "numeric" });
+}
+
+/* ─────────────────────────────────────────────────────────────
+   FOLD
+   ───────────────────────────────────────────────────────────── */
+
+function applyUpdate(u) {
+  const p = u.payload;
+  if (!p || !p.type) return;
+  const senderAddr = p.senderAddr;
+  const senderName = p.senderName;
+  if (senderAddr) state.people[senderAddr] = senderName || senderAddr;
+
+  switch (p.type) {
+    case "create":
+      if (state.created) break;
+      state.created = true;
+      state.host = { addr: senderAddr, name: senderName };
+      state.title = p.title || "";
+      state.location = p.location || "";
+      state.notes = p.notes || "";
+      state.slots = (p.slots || []).map(s => ({ id: s.id, datetime: s.datetime }));
+      state.isPoll = state.slots.length > 1;
+      for (const s of state.slots) state.votes[s.id] = state.votes[s.id] || {};
+      break;
+
+    case "edit":
+      if (!state.created || senderAddr !== state.host.addr) break;
+      if (typeof p.title === "string") state.title = p.title;
+      if (typeof p.location === "string") state.location = p.location;
+      if (typeof p.notes === "string") state.notes = p.notes;
+      if (Array.isArray(p.slots)) {
+        // Only allow editing slot times, not adding/removing slots post-creation.
+        for (const incoming of p.slots) {
+          const existing = state.slots.find(x => x.id === incoming.id);
+          if (existing) existing.datetime = incoming.datetime;
+        }
+      }
+      break;
+
+    case "vote":
+      if (!state.created || !state.isPoll || state.lockedSlotId) break;
+      if (!state.slots.find(s => s.id === p.slotId)) break;
+      state.votes[p.slotId] = state.votes[p.slotId] || {};
+      if (p.response === null) {
+        delete state.votes[p.slotId][senderAddr];
+      } else {
+        state.votes[p.slotId][senderAddr] = { response: p.response, name: senderName };
+      }
+      break;
+
+    case "rsvp":
+      if (!state.created) break;
+      state.rsvps[senderAddr] = {
+        status: p.status,
+        name: senderName,
+        ts: u.serial || Date.now(),
+      };
+      break;
+
+    case "lock":
+      if (!state.created || senderAddr !== state.host.addr) break;
+      if (!state.slots.find(s => s.id === p.slotId)) break;
+      state.lockedSlotId = p.slotId;
+      break;
+
+    case "unlock":
+      if (!state.created || senderAddr !== state.host.addr) break;
+      state.lockedSlotId = null;
+      break;
+
+    case "cancel":
+      if (!state.created || senderAddr !== state.host.addr) break;
+      state.cancelled = true;
+      break;
+
+    case "uncancel":
+      if (!state.created || senderAddr !== state.host.addr) break;
+      state.cancelled = false;
+      break;
+  }
+}
+
+/* ─────────────────────────────────────────────────────────────
+   SEND HELPERS
+   ───────────────────────────────────────────────────────────── */
+
+function send(payload, info, projectedStateMaybe) {
+  payload.senderAddr = mySelfAddr;
+  payload.senderName = mySelfName;
+
+  // Project local state to compute accurate document/summary.
+  const projected = projectedStateMaybe || (() => {
+    // Deep-ish clone of state for projection, apply this update to it.
+    const clone = JSON.parse(JSON.stringify(state));
+    // Temporarily swap globals via a small shim.
+    const realState = Object.assign({}, state);
+    try {
+      // Apply update against clone by running fold logic manually.
+      // To avoid duplicating logic, mutate `state` to clone, apply, snapshot, restore.
+      for (const k in state) delete state[k];
+      Object.assign(state, clone);
+      applyUpdate({ payload: { ...payload }, serial: 0 });
+      return JSON.parse(JSON.stringify(state));
+    } finally {
+      for (const k in state) delete state[k];
+      Object.assign(state, realState);
+    }
+  })();
+
+  const stage = deriveStage(projected);
+  const meta = metadata(projected);
+
+  const u = {
+    payload,
+    summary: meta.summary,
+  };
+  if (meta.document) u.document = meta.document;
+  if (info) u.info = info;
+  // Add stage as a side-channel hint to the payload itself for downstream consumers.
+  payload.stage = stage;
+
+  window.webxdc.sendUpdate(u, "");
+}
+
+function uid() {
+  return Math.random().toString(36).slice(2, 10) + Date.now().toString(36).slice(-4);
+}
+
+/* ─────────────────────────────────────────────────────────────
+   REALTIME (Iroh-backed ephemeral channel)
+   ───────────────────────────────────────────────────────────── */
+
+const RT = {
+  init() {
+    if (!window.webxdc.joinRealtimeChannel) return; // older clients
+    try {
+      realtimeChannel = window.webxdc.joinRealtimeChannel();
+      realtimeChannel.setListener((bytes) => {
+        try {
+          const msg = JSON.parse(new TextDecoder().decode(bytes));
+          this.handle(msg);
+        } catch (e) { /* ignore malformed */ }
+      });
+      // Announce ourselves and start heartbeat.
+      this.broadcast({ kind: "hello" });
+      setInterval(() => this.broadcast({ kind: "ping" }), 8000);
+      // Prune presence every 4s.
+      setInterval(() => this.prunePresence(), 4000);
+    } catch (e) { /* not available */ }
+  },
+  broadcast(msg) {
+    if (!realtimeChannel) return;
+    msg.addr = mySelfAddr;
+    msg.name = mySelfName;
+    msg.t = Date.now();
+    try {
+      realtimeChannel.send(new TextEncoder().encode(JSON.stringify(msg)));
+    } catch (e) { /* drop */ }
+  },
+  handle(msg) {
+    if (!msg || !msg.addr || msg.addr === mySelfAddr) return;
+    // Update presence on any message from someone.
+    live.presence[msg.addr] = { name: msg.name, lastSeen: Date.now() };
+
+    switch (msg.kind) {
+      case "hello":
+        // Reply with a ping so they see us too.
+        this.broadcast({ kind: "ping" });
+        // Re-render to show the new presence dot.
+        scheduleRender();
+        break;
+      case "ping":
+        scheduleRender();
+        break;
+      case "editing-open":
+        live.editing = { addr: msg.addr, name: msg.name, field: msg.field };
+        scheduleRender();
+        break;
+      case "editing-close":
+        if (live.editing && live.editing.addr === msg.addr) live.editing = null;
+        scheduleRender();
+        break;
+      case "vote-hint":
+        // Optimistic flash before the durable update arrives.
+        live.recentVotes[`${msg.slotId}-${msg.addr}`] = Date.now();
+        scheduleRender();
+        break;
+      case "rsvp-hint":
+        live.recentRsvps[msg.addr] = Date.now();
+        scheduleRender();
+        break;
+    }
+  },
+  prunePresence() {
+    const now = Date.now();
+    let changed = false;
+    for (const addr in live.presence) {
+      if (now - live.presence[addr].lastSeen > 25000) {
+        delete live.presence[addr];
+        changed = true;
+      }
+    }
+    if (live.editing && now - (live.presence[live.editing.addr]?.lastSeen || 0) > 25000) {
+      live.editing = null;
+      changed = true;
+    }
+    if (changed) scheduleRender();
+  },
+  leave() {
+    if (!realtimeChannel) return;
+    this.broadcast({ kind: "bye" });
+    try { realtimeChannel.leave(); } catch (e) {}
+  },
+};
+
+window.addEventListener("beforeunload", () => RT.leave());
+
+/* ─────────────────────────────────────────────────────────────
+   FORMATTING
+   ───────────────────────────────────────────────────────────── */
+
+function fmtDateTime(iso) {
+  if (!iso) return "";
+  const d = new Date(iso);
+  if (isNaN(d)) return iso;
+  return d.toLocaleString(undefined, {
+    weekday: "short", month: "short", day: "numeric",
+    hour: "numeric", minute: "2-digit",
+  });
+}
+function fmtDate(iso) {
+  if (!iso) return "";
+  const d = new Date(iso);
+  if (isNaN(d)) return iso;
+  return d.toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric" });
+}
+function fmtTime(iso) {
+  if (!iso) return "";
+  const d = new Date(iso);
+  if (isNaN(d)) return "";
+  return d.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
+}
+
+/* ─────────────────────────────────────────────────────────────
+   ICS EXPORT
+   ───────────────────────────────────────────────────────────── */
+
+function buildIcs() {
+  const slot = state.slots.find(s => s.id === state.lockedSlotId) || state.slots[0];
+  if (!slot) return "";
+  const start = new Date(slot.datetime);
+  const end = new Date(start.getTime() + 2 * 60 * 60 * 1000);
+  const fmt = d => d.toISOString().replace(/[-:]/g, "").replace(/\.\d{3}/, "");
+  const esc = s => (s || "").replace(/\\/g, "\\\\").replace(/\n/g, "\\n").replace(/,/g, "\\,").replace(/;/g, "\\;");
+  return [
+    "BEGIN:VCALENDAR", "VERSION:2.0", "PRODID:-//Plan Webxdc//EN",
+    "BEGIN:VEVENT",
+    `UID:${uid()}@plan.webxdc`,
+    `DTSTAMP:${fmt(new Date())}`,
+    `DTSTART:${fmt(start)}`,
+    `DTEND:${fmt(end)}`,
+    `SUMMARY:${esc(state.title)}`,
+    state.location ? `LOCATION:${esc(state.location)}` : "",
+    state.notes ? `DESCRIPTION:${esc(state.notes)}` : "",
+    "END:VEVENT", "END:VCALENDAR",
+  ].filter(Boolean).join("\r\n");
+}
+
+function downloadIcs() {
+  const ics = buildIcs();
+  if (!ics) return;
+  const blob = new Blob([ics], { type: "text/calendar" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = (state.title || "plan").replace(/[^\w]+/g, "-").toLowerCase() + ".ics";
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+/* ─────────────────────────────────────────────────────────────
+   DOM HELPERS
+   ───────────────────────────────────────────────────────────── */
+
+function el(tag, attrs, ...children) {
+  const e = document.createElement(tag);
+  if (attrs) {
+    for (const k in attrs) {
+      if (k === "class") e.className = attrs[k];
+      else if (k === "style") e.style.cssText = attrs[k];
+      else if (k.startsWith("on")) e.addEventListener(k.slice(2), attrs[k]);
+      else if (k === "html") e.innerHTML = attrs[k];
+      else if (attrs[k] != null) e.setAttribute(k, attrs[k]);
+    }
+  }
+  for (const c of children) {
+    if (c == null || c === false) continue;
+    if (typeof c === "string" || typeof c === "number") e.appendChild(document.createTextNode(String(c)));
+    else e.appendChild(c);
+  }
+  return e;
+}
+
+function avatar(addr, name, size, flash) {
+  const a = el("div", { class: "avatar" + (flash ? " flash" : "") }, initials(name));
+  a.style.background = `linear-gradient(135deg, ${avatarColor(addr)}, ${shade(avatarColor(addr), -20)})`;
+  if (size) { a.style.width = size + "px"; a.style.height = size + "px"; a.style.fontSize = Math.round(size * 0.36) + "px"; }
+  a.title = name || addr || "";
+  return a;
+}
+
+const AVATAR_COLORS = [
+  "#a85a3a", "#7a5cd6", "#4a7a3e", "#b8841a", "#a85454",
+  "#3e7a7a", "#7a3e7a", "#8a6a3e", "#3e5a8a", "#5a8a3e",
+  "#8a3e5a", "#3e8a6a", "#6a3e8a", "#8a6a5a", "#5a6a8a",
+];
+function avatarColor(addr) {
+  if (!addr) return AVATAR_COLORS[0];
+  let h = 0;
+  for (let i = 0; i < addr.length; i++) h = ((h << 5) - h + addr.charCodeAt(i)) | 0;
+  return AVATAR_COLORS[Math.abs(h) % AVATAR_COLORS.length];
+}
+function initials(name) {
+  if (!name) return "?";
+  const parts = name.trim().split(/\s+/);
+  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
+  return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+}
+function shade(hex, pct) {
+  const n = parseInt(hex.slice(1), 16);
+  let r = (n >> 16) + pct, g = ((n >> 8) & 0xff) + pct, b = (n & 0xff) + pct;
+  r = Math.max(0, Math.min(255, r));
+  g = Math.max(0, Math.min(255, g));
+  b = Math.max(0, Math.min(255, b));
+  return "#" + ((1 << 24) + (r << 16) + (g << 8) + b).toString(16).slice(1);
+}
+
+const ICON_PIN = '<svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0z"/><circle cx="12" cy="10" r="3"/></svg>';
+const ICON_CLOCK = '<svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>';
+const ICON_PENCIL = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>';
+
+function iconSpan(svg) {
+  const s = document.createElement("span");
+  s.innerHTML = svg;
+  s.style.display = "inline-flex";
+  s.style.alignItems = "center";
+  return s;
+}
+function pencilButton(onclick) {
+  const b = el("button", { class: "pencil-btn", title: "Edit", onclick });
+  b.innerHTML = ICON_PENCIL;
+  return b;
+}
+
+/* ─────────────────────────────────────────────────────────────
+   DRAFT
+   ───────────────────────────────────────────────────────────── */
+
+let draftState = {
+  title: "", location: "", notes: "",
+  slots: [{ id: uid(), datetime: "" }],
+};
+
+function renderDraft(root) {
+  const card = el("div", { class: "draft-card" });
+  card.appendChild(el("h1", null, "Start a plan"));
+  card.appendChild(el("div", { class: "sub" }, "Gather your people. Pick a time, or propose a few."));
+
+  card.appendChild(el("label", null, "What's the plan"));
+  card.appendChild(el("input", {
+    type: "text",
+    placeholder: "Dinner at Marcy's",
+    value: draftState.title,
+    oninput: e => { draftState.title = e.target.value; validateDraft(); }
+  }));
+
+  card.appendChild(el("label", null, "Where"));
+  card.appendChild(el("input", {
+    type: "text",
+    placeholder: "Optional",
+    value: draftState.location,
+    oninput: e => { draftState.location = e.target.value; }
+  }));
+
+  card.appendChild(el("label", null, "When"));
+  const slotsWrap = el("div", { class: "time-slots" });
+  function renderSlots() {
+    slotsWrap.innerHTML = "";
+    draftState.slots.forEach((slot, i) => {
+      const row = el("div", { class: "time-slot-row" });
+      row.appendChild(el("input", {
+        type: "datetime-local",
+        value: slot.datetime,
+        oninput: e => { draftState.slots[i].datetime = e.target.value; validateDraft(); }
+      }));
+      if (draftState.slots.length > 1) {
+        row.appendChild(el("button", {
+          class: "slot-remove",
+          onclick: () => { draftState.slots.splice(i, 1); renderSlots(); validateDraft(); }
+        }, "×"));
+      }
+      slotsWrap.appendChild(row);
+    });
+  }
+  renderSlots();
+  card.appendChild(slotsWrap);
+  card.appendChild(el("button", {
+    class: "add-time",
+    onclick: () => { draftState.slots.push({ id: uid(), datetime: "" }); renderSlots(); validateDraft(); }
+  }, "+ Propose another time"));
+
+  card.appendChild(el("label", null, "Notes"));
+  card.appendChild(el("textarea", {
+    placeholder: "Bring a side dish. Park on the street.",
+    oninput: e => { draftState.notes = e.target.value; }
+  }, draftState.notes));
+
+  const submit = el("button", { class: "btn-primary", onclick: () => createPlan() }, "Create plan");
+  submit.disabled = true;
+  card.appendChild(submit);
+
+  function validateDraft() {
+    const ok = draftState.title.trim() && draftState.slots.every(s => s.datetime);
+    submit.disabled = !ok;
+  }
+  validateDraft();
+  root.appendChild(card);
+}
+
+function createPlan() {
+  const slots = draftState.slots.filter(s => s.datetime).map(s => ({ id: s.id, datetime: s.datetime }));
+  if (!slots.length || !draftState.title.trim()) return;
+  send({
+    type: "create",
+    title: draftState.title.trim(),
+    location: draftState.location.trim(),
+    notes: draftState.notes.trim(),
+    slots,
+  }, `${mySelfName} started a plan: ${draftState.title.trim()}`);
+}
+
+/* ─────────────────────────────────────────────────────────────
+   EDIT MODAL
+   ───────────────────────────────────────────────────────────── */
+
+function openEditModal() {
+  if (modalEl) return;
+  RT.broadcast({ kind: "editing-open", field: "plan" });
+
+  const draft = {
+    title: state.title,
+    location: state.location,
+    notes: state.notes,
+    slots: state.slots.map(s => ({ ...s })),
+  };
+
+  modalEl = el("div", { class: "modal-overlay", onclick: e => { if (e.target === modalEl) closeEditModal(); } });
+  const modal = el("div", { class: "modal" });
+  modal.appendChild(el("h2", null, "Edit plan"));
+
+  modal.appendChild(el("label", null, "Title"));
+  modal.appendChild(el("input", {
+    type: "text",
+    value: draft.title,
+    oninput: e => draft.title = e.target.value,
+  }));
+
+  modal.appendChild(el("label", null, "Where"));
+  modal.appendChild(el("input", {
+    type: "text",
+    value: draft.location,
+    oninput: e => draft.location = e.target.value,
+  }));
+
+  modal.appendChild(el("label", null, state.isPoll ? "When (vote times)" : "When"));
+  const slotsWrap = el("div", { class: "time-slots" });
+  draft.slots.forEach((slot, i) => {
+    const row = el("div", { class: "time-slot-row" });
+    row.appendChild(el("input", {
+      type: "datetime-local",
+      value: slot.datetime.slice(0, 16),
+      oninput: e => draft.slots[i].datetime = e.target.value,
+    }));
+    slotsWrap.appendChild(row);
+  });
+  modal.appendChild(slotsWrap);
+
+  modal.appendChild(el("label", null, "Notes"));
+  modal.appendChild(el("textarea", {
+    oninput: e => draft.notes = e.target.value,
+  }, draft.notes));
+
+  const actions = el("div", { class: "modal-actions" });
+  actions.appendChild(el("button", { onclick: () => closeEditModal() }, "Cancel"));
+  actions.appendChild(el("button", {
+    class: "primary",
+    onclick: () => {
+      const changed = {};
+      if (draft.title.trim() !== state.title) changed.title = draft.title.trim();
+      if (draft.location.trim() !== state.location) changed.location = draft.location.trim();
+      if (draft.notes.trim() !== state.notes) changed.notes = draft.notes.trim();
+      const changedSlots = draft.slots.filter((s, i) => s.datetime !== state.slots[i].datetime);
+      if (changedSlots.length) changed.slots = changedSlots;
+      if (Object.keys(changed).length) {
+        send({ type: "edit", ...changed }, `${mySelfName} edited the plan`);
+      }
+      closeEditModal();
+    }
+  }, "Save"));
+  modal.appendChild(actions);
+
+  modalEl.appendChild(modal);
+  document.getElementById("modal-root").appendChild(modalEl);
+}
+
+function closeEditModal() {
+  if (modalEl) {
+    modalEl.remove();
+    modalEl = null;
+  }
+  RT.broadcast({ kind: "editing-close" });
+}
+
+/* ─────────────────────────────────────────────────────────────
+   PLAN VIEW
+   ───────────────────────────────────────────────────────────── */
+
+function renderPlan(root) {
+  const stage = deriveStage(state);
+  const isPast = stage === "past";
+  const isHost = mySelfAddr === state.host.addr;
+
+  if (isPast) root.classList.add("past-mode");
+  else root.classList.remove("past-mode");
+
+  const header = el("div", { class: "plan-header" });
+
+  if (state.cancelled) {
+    header.appendChild(el("div", { class: "cancelled-banner" }, "Cancelled"));
+  } else if (isPast) {
+    header.appendChild(el("div", { class: "past-banner" }, "This plan has passed"));
+  }
+
+  // host strip
+  const hostStrip = el("div", { class: "host-strip" });
+  hostStrip.appendChild(avatar(state.host.addr, state.host.name, 28));
+  const hostText = el("span", null);
+  hostText.appendChild(document.createTextNode("hosted by "));
+  hostText.appendChild(el("strong", null, state.host.name || state.host.addr));
+  hostStrip.appendChild(hostText);
+  if (!isPast && !state.cancelled) hostStrip.appendChild(el("span", { class: "host-dot" }));
+  header.appendChild(hostStrip);
+
+  // presence strip — show "X others viewing" when applicable
+  const onlineCount = Object.keys(live.presence).length;
+  if (onlineCount && !isPast) {
+    const ps = el("div", { class: "presence-strip" });
+    ps.appendChild(el("span", { class: "dot" }));
+    ps.appendChild(document.createTextNode(`${onlineCount} other${onlineCount > 1 ? "s" : ""} viewing`));
+    header.appendChild(ps);
+  } else {
+    header.appendChild(el("div", { class: "presence-strip" })); // spacer
+  }
+
+  // editing indicator
+  if (live.editing && live.editing.addr !== mySelfAddr) {
+    header.appendChild(el("div", { class: "editing-indicator" }, `${live.editing.name} is editing…`));
+  }
+
+  // title (+ pencil for host)
+  const titleWrap = el("div", { class: "plan-title-wrap" });
+  titleWrap.appendChild(el("h2", { class: "plan-title" + (live.justLocked ? " just-locked" : "") }, state.title));
+  if (isHost && !state.cancelled && !isPast) titleWrap.appendChild(pencilButton(openEditModal));
+  header.appendChild(titleWrap);
+
+  const meta = el("div", { class: "plan-meta" });
+  const lockedSlot = state.slots.find(s => s.id === state.lockedSlotId);
+  if (lockedSlot) {
+    const row = el("div", { class: "row" });
+    row.appendChild(iconSpan(ICON_CLOCK));
+    row.appendChild(document.createTextNode(fmtDate(lockedSlot.datetime) + " · " + fmtTime(lockedSlot.datetime)));
+    meta.appendChild(row);
+  } else if (!state.isPoll && state.slots[0]) {
+    const row = el("div", { class: "row" });
+    row.appendChild(iconSpan(ICON_CLOCK));
+    row.appendChild(document.createTextNode(fmtDate(state.slots[0].datetime) + " · " + fmtTime(state.slots[0].datetime)));
+    meta.appendChild(row);
+  }
+  if (state.location) {
+    const row = el("div", { class: "row" });
+    row.appendChild(iconSpan(ICON_PIN));
+    row.appendChild(document.createTextNode(state.location));
+    meta.appendChild(row);
+  }
+  header.appendChild(meta);
+
+  if (state.notes) {
+    header.appendChild(el("div", { class: "plan-notes" }, "\u201C" + state.notes + "\u201D"));
+  }
+  root.appendChild(header);
+
+  // voting (only if poll, not locked, not cancelled, not past)
+  if (state.isPoll && !state.lockedSlotId && !state.cancelled && !isPast) {
+    root.appendChild(el("div", { class: "divider" }, el("span", null, "Pick a time")));
+
+    let leadCount = 0, leaderIds = [];
+    for (const slot of state.slots) {
+      const yesCount = Object.values(state.votes[slot.id] || {}).filter(v => v.response === "yes").length;
+      if (yesCount > leadCount) { leadCount = yesCount; leaderIds = [slot.id]; }
+      else if (yesCount === leadCount && yesCount > 0) { leaderIds.push(slot.id); }
+    }
+
+    for (const slot of state.slots) {
+      const myVote = (state.votes[slot.id] || {})[mySelfAddr];
+      const myV = myVote ? myVote.response : null;
+      const yesVoters = Object.entries(state.votes[slot.id] || {}).filter(([_, v]) => v.response === "yes");
+
+      const slotEl = el("div", { class: "vote-slot" + (leaderIds.includes(slot.id) && leadCount > 0 ? " winning" : "") });
+      const head = el("div", { class: "vote-slot-header" });
+      head.appendChild(el("div", { class: "vote-slot-time" }, fmtDateTime(slot.datetime)));
+      head.appendChild(el("div", { class: "vote-slot-count" },
+        yesVoters.length === 0 ? "no votes yet"
+          : yesVoters.length === 1 ? "1 in" : `${yesVoters.length} in`));
+      slotEl.appendChild(head);
+
+      const btns = el("div", { class: "vote-buttons" });
+      for (const v of [["yes", "Yes"], ["maybe", "Maybe"], ["no", "No"]]) {
+        const justTapped = live.justTapped && live.justTapped.kind === "vote"
+          && live.justTapped.key === `${slot.id}-${v[0]}`;
+        btns.appendChild(el("button", {
+          class: "vote-btn" + (myV === v[0] ? " active" : "") + (justTapped ? " just-tapped" : ""),
+          "data-v": v[0],
+          onclick: () => sendVote(slot.id, v[0]),
+        }, v[1]));
+      }
+      slotEl.appendChild(btns);
+
+      const voters = el("div", { class: "voters-row" });
+      yesVoters.forEach(([addr, v]) => {
+        const recentKey = `${slot.id}-${addr}`;
+        const flash = live.recentVotes[recentKey] && (Date.now() - live.recentVotes[recentKey] < 1000);
+        voters.appendChild(avatar(addr, v.name, 22, flash));
+      });
+      slotEl.appendChild(voters);
+
+      if (isHost) {
+        slotEl.appendChild(el("button", { class: "lock-btn", onclick: () => lockSlot(slot.id) }, "Lock in this time"));
+      }
+      root.appendChild(slotEl);
+    }
+  }
+
+  // RSVPs (hide buttons when past / cancelled, but always show rosters)
+  if (!state.cancelled) {
+    const heading = isPast ? "Who came" : "Are you in?";
+    root.appendChild(el("div", { class: "divider" }, el("span", null, heading)));
+
+    const myRsvp = state.rsvps[mySelfAddr];
+    const myStatus = myRsvp ? myRsvp.status : null;
+
+    if (!isPast) {
+      const rsvpBtns = el("div", { class: "rsvp-buttons" });
+      for (const r of [
+        ["going", "I'm in", "🙋"],
+        ["maybe", "Maybe", "🤔"],
+        ["not_going", "Can't", "🙅"]
+      ]) {
+        const justTapped = live.justTapped && live.justTapped.kind === "rsvp" && live.justTapped.key === r[0];
+        rsvpBtns.appendChild(el("button", {
+          class: "rsvp-btn" + (myStatus === r[0] ? " active" : "") + (justTapped ? " just-tapped" : ""),
+          "data-r": r[0],
+          onclick: () => sendRsvp(r[0]),
+        },
+          el("span", { class: "emoji" }, r[2]),
+          el("span", null, r[1])
+        ));
+      }
+      root.appendChild(rsvpBtns);
+    }
+
+    const going = [], maybe = [], not_going = [];
+    for (const addr in state.rsvps) {
+      const r = state.rsvps[addr];
+      if (r.status === "going") going.push({ addr, ...r });
+      else if (r.status === "maybe") maybe.push({ addr, ...r });
+      else if (r.status === "not_going") not_going.push({ addr, ...r });
+    }
+
+    if (going.length) root.appendChild(renderRsvpGroup(isPast ? "Came" : "Going", going, false));
+    if (maybe.length && !isPast) root.appendChild(renderRsvpGroup("Maybe", maybe, true));
+    if (not_going.length && !isPast) root.appendChild(renderRsvpGroup("Can't make it", not_going, true));
+  }
+
+  // footer
+  const footer = el("div", { class: "footer-actions" });
+  if (!isPast && (state.lockedSlotId || (!state.isPoll && state.slots.length === 1))) {
+    footer.appendChild(el("button", { onclick: downloadIcs }, "Add to calendar"));
+  }
+  if (isHost && !state.cancelled && !isPast) {
+    if (state.lockedSlotId) {
+      footer.appendChild(el("button", { onclick: unlockPlan }, "Unlock time"));
+    }
+    footer.appendChild(el("button", { class: "danger", onclick: cancelPlan }, "Cancel plan"));
+  } else if (isHost && state.cancelled) {
+    footer.appendChild(el("button", { onclick: uncancelPlan }, "Un-cancel"));
+  }
+  if (footer.children.length) root.appendChild(footer);
+}
+
+function renderRsvpGroup(title, list, compact) {
+  const group = el("div", { class: "rsvp-group" });
+  const header = el("div", { class: "rsvp-group-header" });
+  header.appendChild(document.createTextNode(title));
+  header.appendChild(el("span", { class: "rsvp-group-count" }, "· " + list.length));
+  group.appendChild(header);
+
+  const listEl = el("div", { class: "rsvp-list" + (compact ? " compact" : "") });
+  for (const p of list) {
+    const online = !!live.presence[p.addr];
+    const flash = live.recentRsvps[p.addr] && (Date.now() - live.recentRsvps[p.addr] < 1000);
+    const person = el("div", { class: "person" + (compact ? " compact" : "") + (online ? " online" : "") });
+    person.appendChild(avatar(p.addr, p.name, compact ? 22 : 36, flash));
+    person.appendChild(el("span", { class: "name" }, p.name || p.addr));
+    listEl.appendChild(person);
+  }
+  group.appendChild(listEl);
+  return group;
+}
+
+/* ─────────────────────────────────────────────────────────────
+   ACTIONS
+   ───────────────────────────────────────────────────────────── */
+
+function sendVote(slotId, response) {
+  const cur = (state.votes[slotId] || {})[mySelfAddr];
+  const finalResponse = (cur && cur.response === response) ? null : response;
+  RT.broadcast({ kind: "vote-hint", slotId, response: finalResponse });
+  live.justTapped = { kind: "vote", key: `${slotId}-${response}` };
+  setTimeout(() => { live.justTapped = null; scheduleRender(); }, 500);
+  const action = finalResponse === null ? "cleared their vote"
+    : finalResponse === "yes" ? "voted yes"
+    : finalResponse === "maybe" ? "voted maybe"
+    : "voted no";
+  send({ type: "vote", slotId, response: finalResponse }, `${mySelfName} ${action}`);
+}
+
+function sendRsvp(status) {
+  RT.broadcast({ kind: "rsvp-hint", status });
+  live.justTapped = { kind: "rsvp", key: status };
+  setTimeout(() => { live.justTapped = null; scheduleRender(); }, 500);
+  const label = status === "going" ? "is in" : status === "maybe" ? "is a maybe" : "is out";
+  send({ type: "rsvp", status }, `${mySelfName} ${label}`);
+}
+
+function lockSlot(slotId) {
+  const slot = state.slots.find(s => s.id === slotId);
+  if (!slot) return;
+  live.justLocked = true;
+  showToast("Locked in");
+  setTimeout(() => { live.justLocked = false; scheduleRender(); }, 1300);
+  send({ type: "lock", slotId }, `Plan locked: ${fmtDateTime(slot.datetime)}`);
+}
+
+function unlockPlan() {
+  showToast("Reopened for voting");
+  send({ type: "unlock" }, "Plan time reopened for voting");
+}
+
+function cancelPlan() {
+  if (!confirm("Cancel this plan? Everyone will see it's off.")) return;
+  send({ type: "cancel" }, `${mySelfName} cancelled the plan`);
+}
+
+function uncancelPlan() {
+  send({ type: "uncancel" }, `${mySelfName} brought the plan back`);
+}
+
+/* ─────────────────────────────────────────────────────────────
+   RENDER
+   ───────────────────────────────────────────────────────────── */
+
+let renderScheduled = false;
+function scheduleRender() {
+  if (renderScheduled) return;
+  renderScheduled = true;
+  requestAnimationFrame(() => {
+    renderScheduled = false;
+    render();
+  });
+}
+
+function render() {
+  const root = document.getElementById("app");
+  root.innerHTML = "";
+  if (!state.created) renderDraft(root);
+  else renderPlan(root);
+  renderToast();
+}
+
+function renderToast() {
+  // Remove old toast if any
+  const old = document.getElementById("toast");
+  if (old) old.remove();
+  if (!live.toast) return;
+  const t = el("div", { class: "toast", id: "toast" }, live.toast.text);
+  document.body.appendChild(t);
+}
+
+function showToast(text) {
+  const id = Date.now();
+  live.toast = { text, id };
+  scheduleRender();
+  setTimeout(() => {
+    if (live.toast && live.toast.id === id) {
+      live.toast = null;
+      scheduleRender();
+    }
+  }, 2400);
+}
+
+/* ─────────────────────────────────────────────────────────────
+   BOOT
+   ───────────────────────────────────────────────────────────── */
+
+function boot() {
+  if (!window.webxdc) {
+    // browser-preview shim
+    window.webxdc = {
+      selfAddr: "you@example.com",
+      selfName: "You",
+      sendUpdate: (u) => {
+        applyUpdate({ payload: u.payload, serial: Date.now() });
+        scheduleRender();
+      },
+      setUpdateListener: () => Promise.resolve(),
+    };
+  }
+  mySelfAddr = window.webxdc.selfAddr;
+  mySelfName = window.webxdc.selfName || window.webxdc.selfAddr;
+
+  window.webxdc.setUpdateListener((update) => {
+    applyUpdate(update);
+    scheduleRender();
+  }, 0).then(() => {
+    scheduleRender();
+    if (state.created) RT.init();
+  });
+
+  // Re-render every minute so stage transitions to "past" automatically.
+  setInterval(() => scheduleRender(), 60000);
+
+  render();
+}
+
+boot();
+</script>
+</body>
+</html>
