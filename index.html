@@ -329,7 +329,55 @@
     border-color: var(--accent);
     font-weight: 600;
   }
+  .modal-actions button.primary.danger {
+    background: var(--no);
+    border-color: var(--no);
+    color: #fff;
+  }
   .modal-actions button:active { transform: scale(.97); }
+  .modal-narrow { max-width: 440px; }
+  .modal-body {
+    color: var(--ink-dim);
+    font-size: 14px;
+    line-height: 1.55;
+    margin: 6px 0 0;
+  }
+
+  /* ─── toggle row (notifications opt-in) ─── */
+  .toggle-row {
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+    margin: 22px 0 6px;
+    padding: 12px 14px;
+    background: var(--bg);
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    cursor: pointer;
+    text-transform: none;
+    letter-spacing: normal;
+    font-size: inherit;
+    color: var(--ink);
+  }
+  .toggle-row input[type="checkbox"] {
+    width: 18px; height: 18px; margin: 1px 0 0;
+    accent-color: var(--accent);
+    flex-shrink: 0;
+    cursor: pointer;
+  }
+  .toggle-text { display: flex; flex-direction: column; gap: 3px; }
+  .toggle-text strong { font-weight: 600; font-size: 14px; }
+  .toggle-hint { color: var(--ink-dim); font-size: 12px; line-height: 1.4; }
+
+  /* ─── notes content (linkified text) ─── */
+  .plan-notes a {
+    color: var(--accent);
+    text-decoration: underline;
+    text-underline-offset: 2px;
+    text-decoration-thickness: 1px;
+    word-break: break-all;
+  }
+  .plan-notes a:active { opacity: .7; }
 
   /* ─── divider ─── */
   .divider {
@@ -396,8 +444,37 @@
   .vote-btn.active[data-v="maybe"] { background: var(--maybe); color: #14171a; border-color: var(--maybe); }
   .vote-btn.active[data-v="no"] { background: var(--no); color: #fff; border-color: var(--no); }
   .voters-row {
-    display: flex; flex-wrap: wrap; gap: 4px;
+    display: flex; flex-wrap: wrap;
+    column-gap: 14px;
+    row-gap: 6px;
+    align-items: center;
     min-height: 24px;
+  }
+  .voter-bucket {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+  }
+  .voter-bucket-icon {
+    font-size: 13px;
+    line-height: 1;
+    opacity: .85;
+  }
+  .voter-stack {
+    display: flex;
+    align-items: center;
+  }
+  /* Overlap avatars in the stack to save horizontal space */
+  .voter-stack .avatar {
+    margin-left: -6px;
+  }
+  .voter-stack .avatar:first-child {
+    margin-left: 0;
+  }
+  /* Dim non-yes buckets a touch so yes remains the visual priority */
+  .voter-bucket[data-r="maybe"] .avatar,
+  .voter-bucket[data-r="no"] .avatar {
+    opacity: .82;
   }
   .lock-btn {
     background: transparent;
@@ -642,6 +719,7 @@ const state = {
   isPoll: false,
   lockedSlotId: null,
   cancelled: false,
+  notifyOnChanges: false,
   votes: {},
   rsvps: {},
   people: {},
@@ -699,9 +777,14 @@ function metadata(s) {
     case null: summary = ""; break;
     case "cancelled": summary = "cancelled"; break;
     case "voting": {
-      const totalVotes = Object.values(s.votes).reduce(
-        (n, v) => n + Object.values(v).filter(x => x.response === "yes").length, 0);
-      summary = totalVotes ? `voting · ${totalVotes} in` : "voting open";
+      // Count unique people who've cast any vote on any slot — NOT the
+      // sum of yes-votes (one person voting yes on 3 slots is still 1 voter).
+      const voterAddrs = new Set();
+      for (const slotVotes of Object.values(s.votes)) {
+        for (const addr in slotVotes) voterAddrs.add(addr);
+      }
+      const n = voterAddrs.size;
+      summary = n ? `voting · ${n} voted` : "voting open";
       break;
     }
     case "confirmed": {
@@ -725,13 +808,9 @@ function metadata(s) {
 function shortDate(iso) {
   const d = new Date(iso);
   if (isNaN(d)) return "";
-  return d.toLocaleString(undefined, { 
-    weekday: "short", 
-    month: "numeric", 
-    day: "numeric",
-    hour: "numeric", 
-    minute: "2-digit" 
-  });
+  const date = d.toLocaleDateString(undefined, { weekday: "short", month: "numeric", day: "numeric" });
+  const time = d.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
+  return `${date} ${time}`;
 }
 
 /* ─────────────────────────────────────────────────────────────
@@ -755,6 +834,7 @@ function applyUpdate(u) {
       state.notes = p.notes || "";
       state.slots = (p.slots || []).map(s => ({ id: s.id, datetime: s.datetime }));
       state.isPoll = state.slots.length > 1;
+      state.notifyOnChanges = !!p.notifyOnChanges;
       for (const s of state.slots) state.votes[s.id] = state.votes[s.id] || {};
       break;
 
@@ -796,11 +876,39 @@ function applyUpdate(u) {
       if (!state.created || senderAddr !== state.host.addr) break;
       if (!state.slots.find(s => s.id === p.slotId)) break;
       state.lockedSlotId = p.slotId;
+      // Auto-promote votes on the winning slot into RSVPs for anyone who
+      // hasn't already RSVP'd explicitly. This is deterministic — every
+      // client computes the same result — and reflects the user's intent:
+      // a yes-vote on this slot means "I'm in for this time."
+      // Mark as autoFromVote so unlock can cleanly reverse it.
+      {
+        const winnerVotes = state.votes[p.slotId] || {};
+        for (const voterAddr in winnerVotes) {
+          if (state.rsvps[voterAddr]) continue; // explicit RSVP wins
+          const response = winnerVotes[voterAddr].response;
+          const name = winnerVotes[voterAddr].name;
+          const status = response === "yes" ? "going"
+                       : response === "maybe" ? "maybe"
+                       : response === "no" ? "not_going"
+                       : null;
+          if (!status) continue;
+          state.rsvps[voterAddr] = {
+            status, name,
+            ts: u.serial || Date.now(),
+            autoFromVote: true,
+          };
+        }
+      }
       break;
 
     case "unlock":
       if (!state.created || senderAddr !== state.host.addr) break;
       state.lockedSlotId = null;
+      // Remove any RSVPs that were auto-promoted from votes. Explicit
+      // RSVPs (made after lock) stay intact.
+      for (const addr in state.rsvps) {
+        if (state.rsvps[addr].autoFromVote) delete state.rsvps[addr];
+      }
       break;
 
     case "cancel":
@@ -819,19 +927,16 @@ function applyUpdate(u) {
    SEND HELPERS
    ───────────────────────────────────────────────────────────── */
 
-function send(payload, info, projectedStateMaybe, notify) {
+function send(payload, info, opts) {
+  opts = opts || {};
   payload.senderAddr = mySelfAddr;
   payload.senderName = mySelfName;
 
   // Project local state to compute accurate document/summary.
-  const projected = projectedStateMaybe || (() => {
-    // Deep-ish clone of state for projection, apply this update to it.
+  const projected = (() => {
     const clone = JSON.parse(JSON.stringify(state));
-    // Temporarily swap globals via a small shim.
     const realState = Object.assign({}, state);
     try {
-      // Apply update against clone by running fold logic manually.
-      // To avoid duplicating logic, mutate `state` to clone, apply, snapshot, restore.
       for (const k in state) delete state[k];
       Object.assign(state, clone);
       applyUpdate({ payload: { ...payload }, serial: 0 });
@@ -845,22 +950,31 @@ function send(payload, info, projectedStateMaybe, notify) {
   const stage = deriveStage(projected);
   const meta = metadata(projected);
 
-  const u = {
-    payload,
-    // 'info' adds a text line in the chat bubble history
-    info: meta.summary
-  };
-
-  if (notify) {
-    // 'notify' triggers the actual system sound/vibration/banner
-    u.notify = { "*": meta.summary };
+  // Append the plan title to the info line, so updates are unambiguous
+  // when two Plan instances are active in the same chat.
+  // Skip on `create` itself (the info line already includes the title verbatim).
+  let infoLine = info;
+  if (info && payload.type !== "create" && projected.title) {
+    infoLine = `${info} · ${projected.title}`;
   }
 
+  const u = {
+    payload,
+    summary: meta.summary,
+  };
   if (meta.document) u.document = meta.document;
-  if (info) u.info = info;
-  // Add stage as a side-channel hint to the payload itself for downstream consumers.
-  payload.stage = stage;
+  if (infoLine) u.info = infoLine;
 
+  // Notifications: respect the host's "notify everyone" setting on this plan.
+  // The notify field is per-update and routes to all recipients when "*".
+  // Skip on the `create` update — recipients haven't opted in yet, and
+  // the chat message itself already announces the plan's arrival.
+  if (projected.notifyOnChanges && payload.type !== "create") {
+    const notifyText = opts.notify || infoLine;
+    if (notifyText) u.notify = { "*": notifyText };
+  }
+
+  payload.stage = stage;
   window.webxdc.sendUpdate(u, "");
 }
 
@@ -1008,18 +1122,42 @@ function buildIcs() {
   ].filter(Boolean).join("\r\n");
 }
 
-function downloadIcs() {
+function exportIcs() {
   const ics = buildIcs();
   if (!ics) return;
-  const blob = new Blob([ics], { type: "text/calendar" });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = (state.title || "plan").replace(/[^\w]+/g, "-").toLowerCase() + ".ics";
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
-  setTimeout(() => URL.revokeObjectURL(url), 1000);
+  const filename = (state.title || "plan").replace(/[^\w]+/g, "-").toLowerCase() + ".ics";
+
+  // Preferred path: send the .ics into the chat as a file attachment so
+  // anyone in the group can tap it to add to their calendar. This works
+  // reliably on mobile, where programmatic <a download> clicks are blocked.
+  if (window.webxdc && typeof window.webxdc.sendToChat === "function") {
+    const b64 = btoa(unescape(encodeURIComponent(ics)));
+    try {
+      window.webxdc.sendToChat({
+        file: { name: filename, base64: b64 },
+        text: `📅 ${state.title}`,
+      });
+      showToast("Sent to chat");
+      return;
+    } catch (e) {
+      // fall through to download path
+    }
+  }
+
+  // Desktop fallback: programmatic download.
+  try {
+    const blob = new Blob([ics], { type: "text/calendar" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  } catch (e) {
+    showToast("Couldn't export — copy the time manually");
+  }
 }
 
 /* ─────────────────────────────────────────────────────────────
@@ -1051,6 +1189,40 @@ function avatar(addr, name, size, flash) {
   if (size) { a.style.width = size + "px"; a.style.height = size + "px"; a.style.fontSize = Math.round(size * 0.36) + "px"; }
   a.title = name || addr || "";
   return a;
+}
+
+// Append `text` to `parent`, with http(s):// and www. URLs turned into anchors.
+// Newlines preserved as <br>. No markdown; plain text + links only.
+function appendLinkified(parent, text) {
+  if (!text) return;
+  const re = /(https?:\/\/[^\s<>"']+|www\.[^\s<>"']+)/gi;
+  let lastIndex = 0;
+  let m;
+  const pushText = (s) => {
+    if (!s) return;
+    const lines = s.split("\n");
+    lines.forEach((line, i) => {
+      if (line) parent.appendChild(document.createTextNode(line));
+      if (i < lines.length - 1) parent.appendChild(document.createElement("br"));
+    });
+  };
+  while ((m = re.exec(text)) !== null) {
+    pushText(text.slice(lastIndex, m.index));
+    let url = m[0];
+    // Strip trailing punctuation that's unlikely to be part of the URL.
+    let trailing = "";
+    while (/[).,;:!?]$/.test(url)) { trailing = url.slice(-1) + trailing; url = url.slice(0, -1); }
+    const href = url.startsWith("www.") ? "https://" + url : url;
+    const a = document.createElement("a");
+    a.href = href;
+    a.target = "_blank";
+    a.rel = "noopener noreferrer";
+    a.appendChild(document.createTextNode(url));
+    parent.appendChild(a);
+    if (trailing) parent.appendChild(document.createTextNode(trailing));
+    lastIndex = m.index + m[0].length;
+  }
+  pushText(text.slice(lastIndex));
 }
 
 const AVATAR_COLORS = [
@@ -1103,6 +1275,7 @@ function pencilButton(onclick) {
 let draftState = {
   title: "", location: "", notes: "",
   slots: [{ id: uid(), datetime: "" }],
+  notifyOnChanges: false,
 };
 
 function renderDraft(root) {
@@ -1159,6 +1332,21 @@ function renderDraft(root) {
     oninput: e => { draftState.notes = e.target.value; }
   }, draftState.notes));
 
+  // Notifications toggle — recommended for small groups.
+  const toggleWrap = el("label", { class: "toggle-row" });
+  const cb = el("input", {
+    type: "checkbox",
+    onchange: e => { draftState.notifyOnChanges = e.target.checked; },
+  });
+  if (draftState.notifyOnChanges) cb.setAttribute("checked", "checked");
+  toggleWrap.appendChild(cb);
+  const toggleText = el("span", { class: "toggle-text" });
+  toggleText.appendChild(el("strong", null, "Notify everyone on changes"));
+  toggleText.appendChild(el("span", { class: "toggle-hint" },
+    "Pings the group when someone RSVPs or the time changes. Skip for big groups."));
+  toggleWrap.appendChild(toggleText);
+  card.appendChild(toggleWrap);
+
   const submit = el("button", { class: "btn-primary", onclick: () => createPlan() }, "Create plan");
   submit.disabled = true;
   card.appendChild(submit);
@@ -1180,6 +1368,7 @@ function createPlan() {
     location: draftState.location.trim(),
     notes: draftState.notes.trim(),
     slots,
+    notifyOnChanges: !!draftState.notifyOnChanges,
   }, `${mySelfName} started a plan: ${draftState.title.trim()}`);
 }
 
@@ -1246,7 +1435,7 @@ function openEditModal() {
       const changedSlots = draft.slots.filter((s, i) => s.datetime !== state.slots[i].datetime);
       if (changedSlots.length) changed.slots = changedSlots;
       if (Object.keys(changed).length) {
-        send({ type: "edit", ...changed }, `The ${state.title} plan changed 🕵️`, true);
+        send({ type: "edit", ...changed }, `${mySelfName} edited the plan`);
       }
       closeEditModal();
     }
@@ -1263,6 +1452,40 @@ function closeEditModal() {
     modalEl = null;
   }
   RT.broadcast({ kind: "editing-close" });
+}
+
+/* ─────────────────────────────────────────────────────────────
+   CONFIRM DIALOG (mobile-friendly replacement for confirm())
+   ───────────────────────────────────────────────────────────── */
+
+let confirmEl = null;
+
+function openConfirm({ title, body, confirmLabel, cancelLabel, confirmDanger, onConfirm }) {
+  closeConfirm();
+  confirmEl = el("div", { class: "modal-overlay", onclick: e => { if (e.target === confirmEl) closeConfirm(); } });
+  const modal = el("div", { class: "modal modal-narrow" });
+  modal.appendChild(el("h2", null, title || "Are you sure?"));
+  if (body) modal.appendChild(el("p", { class: "modal-body" }, body));
+  const actions = el("div", { class: "modal-actions" });
+  actions.appendChild(el("button", { onclick: () => closeConfirm() }, cancelLabel || "Never mind"));
+  actions.appendChild(el("button", {
+    class: "primary" + (confirmDanger ? " danger" : ""),
+    onclick: () => {
+      const fn = onConfirm;
+      closeConfirm();
+      if (fn) fn();
+    },
+  }, confirmLabel || "Yes"));
+  modal.appendChild(actions);
+  confirmEl.appendChild(modal);
+  document.getElementById("modal-root").appendChild(confirmEl);
+}
+
+function closeConfirm() {
+  if (confirmEl) {
+    confirmEl.remove();
+    confirmEl = null;
+  }
 }
 
 /* ─────────────────────────────────────────────────────────────
@@ -1339,7 +1562,11 @@ function renderPlan(root) {
   header.appendChild(meta);
 
   if (state.notes) {
-    header.appendChild(el("div", { class: "plan-notes" }, "\u201C" + state.notes + "\u201D"));
+    const notesEl = el("div", { class: "plan-notes" });
+    notesEl.appendChild(document.createTextNode("\u201C"));
+    appendLinkified(notesEl, state.notes);
+    notesEl.appendChild(document.createTextNode("\u201D"));
+    header.appendChild(notesEl);
   }
   root.appendChild(header);
 
@@ -1357,14 +1584,22 @@ function renderPlan(root) {
     for (const slot of state.slots) {
       const myVote = (state.votes[slot.id] || {})[mySelfAddr];
       const myV = myVote ? myVote.response : null;
-      const yesVoters = Object.entries(state.votes[slot.id] || {}).filter(([_, v]) => v.response === "yes");
+      const allVotes = Object.entries(state.votes[slot.id] || {});
+      const yesVoters = allVotes.filter(([_, v]) => v.response === "yes");
+      const maybeVoters = allVotes.filter(([_, v]) => v.response === "maybe");
+      const noVoters = allVotes.filter(([_, v]) => v.response === "no");
 
       const slotEl = el("div", { class: "vote-slot" + (leaderIds.includes(slot.id) && leadCount > 0 ? " winning" : "") });
       const head = el("div", { class: "vote-slot-header" });
       head.appendChild(el("div", { class: "vote-slot-time" }, fmtDateTime(slot.datetime)));
-      head.appendChild(el("div", { class: "vote-slot-count" },
-        yesVoters.length === 0 ? "no votes yet"
-          : yesVoters.length === 1 ? "1 in" : `${yesVoters.length} in`));
+
+      // Build a count line that's honest about all responses, not just yeses.
+      const parts = [];
+      if (yesVoters.length) parts.push(`${yesVoters.length} in`);
+      if (maybeVoters.length) parts.push(`${maybeVoters.length} maybe`);
+      if (noVoters.length) parts.push(noVoters.length === 1 ? "1 no" : `${noVoters.length} no`);
+      const countText = parts.length ? parts.join(", ") : "no votes yet";
+      head.appendChild(el("div", { class: "vote-slot-count" }, countText));
       slotEl.appendChild(head);
 
       const btns = el("div", { class: "vote-buttons" });
@@ -1379,13 +1614,28 @@ function renderPlan(root) {
       }
       slotEl.appendChild(btns);
 
+      // Show all three buckets so you can see WHO is in / maybe / no.
+      // Each bucket has an emoji prefix; empty buckets are skipped.
+      const renderBucket = (response, voters, emoji) => {
+        if (!voters.length) return null;
+        const bucket = el("div", { class: "voter-bucket", "data-r": response });
+        bucket.appendChild(el("span", { class: "voter-bucket-icon" }, emoji));
+        const stack = el("div", { class: "voter-stack" });
+        voters.forEach(([addr, v]) => {
+          const flash = live.recentVotes[`${slot.id}-${addr}`] && (Date.now() - live.recentVotes[`${slot.id}-${addr}`] < 1000);
+          stack.appendChild(avatar(addr, v.name, 22, flash));
+        });
+        bucket.appendChild(stack);
+        return bucket;
+      };
       const voters = el("div", { class: "voters-row" });
-      yesVoters.forEach(([addr, v]) => {
-        const recentKey = `${slot.id}-${addr}`;
-        const flash = live.recentVotes[recentKey] && (Date.now() - live.recentVotes[recentKey] < 1000);
-        voters.appendChild(avatar(addr, v.name, 22, flash));
-      });
-      slotEl.appendChild(voters);
+      const yesBucket = renderBucket("yes", yesVoters, "🙋");
+      const maybeBucket = renderBucket("maybe", maybeVoters, "🤔");
+      const noBucket = renderBucket("no", noVoters, "🙅");
+      if (yesBucket) voters.appendChild(yesBucket);
+      if (maybeBucket) voters.appendChild(maybeBucket);
+      if (noBucket) voters.appendChild(noBucket);
+      if (voters.children.length) slotEl.appendChild(voters);
 
       if (isHost) {
         slotEl.appendChild(el("button", { class: "lock-btn", onclick: () => lockSlot(slot.id) }, "Lock in this time"));
@@ -1394,8 +1644,12 @@ function renderPlan(root) {
     }
   }
 
-  // RSVPs (hide buttons when past / cancelled, but always show rosters)
-  if (!state.cancelled) {
+  // RSVPs only show once the time is settled — either a single-time plan,
+  // or a poll that's been locked, or past. During the voting phase, the
+  // per-slot votes ARE the availability signal; making people also RSVP
+  // would be redundant and creates ambiguous state.
+  const isVoting = state.isPoll && !state.lockedSlotId && !isPast;
+  if (!state.cancelled && !isVoting) {
     const heading = isPast ? "Who came" : "Are you in?";
     root.appendChild(el("div", { class: "divider" }, el("span", null, heading)));
 
@@ -1438,7 +1692,7 @@ function renderPlan(root) {
   // footer
   const footer = el("div", { class: "footer-actions" });
   if (!isPast && (state.lockedSlotId || (!state.isPoll && state.slots.length === 1))) {
-    footer.appendChild(el("button", { onclick: downloadIcs }, "Add to calendar"));
+    footer.appendChild(el("button", { onclick: exportIcs }, "Add to calendar"));
   }
   if (isHost && !state.cancelled && !isPast) {
     if (state.lockedSlotId) {
@@ -1481,42 +1735,59 @@ function sendVote(slotId, response) {
   RT.broadcast({ kind: "vote-hint", slotId, response: finalResponse });
   live.justTapped = { kind: "vote", key: `${slotId}-${response}` };
   setTimeout(() => { live.justTapped = null; scheduleRender(); }, 500);
-  const action = finalResponse === null ? "cleared their vote"
-    : finalResponse === "yes" ? "voted yes"
-    : finalResponse === "maybe" ? "voted maybe"
-    : "voted no";
-  send({ type: "vote", slotId, response: finalResponse }, `${mySelfName} ${action}`);
+  // Generic message — a poll vote is about a time slot, not a yes/no
+  // commitment, so don't pretend it is. The full per-slot votes are visible
+  // inside the app for anyone who opens it.
+  const info = finalResponse === null
+    ? `${mySelfName} cleared a vote`
+    : `${mySelfName} voted on a time`;
+  send({ type: "vote", slotId, response: finalResponse }, info);
 }
 
 function sendRsvp(status) {
   RT.broadcast({ kind: "rsvp-hint", status });
   live.justTapped = { kind: "rsvp", key: status };
   setTimeout(() => { live.justTapped = null; scheduleRender(); }, 500);
-  const label = status === "going" ? "is down 🙋 for" : status === "maybe" ? "is a maybe 🤔 for" : "is a no 🙅 for";
-  send({ type: "rsvp", status }, `${mySelfName} ${label} ${state.title}`, true);
+  const label = status === "going" ? "is in" : status === "maybe" ? "is a maybe" : "is out";
+  send({ type: "rsvp", status }, `${mySelfName} ${label}`);
 }
 
 function lockSlot(slotId) {
   const slot = state.slots.find(s => s.id === slotId);
   if (!slot) return;
   live.justLocked = true;
-  showToast("Locked in");
+  // Count voters who'll be auto-promoted to RSVPs so we can surface it.
+  const winnerVotes = state.votes[slotId] || {};
+  let autoCount = 0;
+  for (const a in winnerVotes) {
+    if (!state.rsvps[a] && (winnerVotes[a].response === "yes" || winnerVotes[a].response === "maybe" || winnerVotes[a].response === "no")) {
+      autoCount++;
+    }
+  }
+  showToast(autoCount ? `Locked in · ${autoCount} auto-RSVP'd` : "Locked in");
   setTimeout(() => { live.justLocked = false; scheduleRender(); }, 1300);
-  send({ type: "lock", slotId }, `${state.title} locked: ${fmtDateTime(slot.datetime)} 😤`, true);
+  send({ type: "lock", slotId }, `Time locked: ${fmtDateTime(slot.datetime)}`);
 }
 
 function unlockPlan() {
   showToast("Reopened for voting");
-  send({ type: "unlock" }, "Plan time reopened for voting");
+  send({ type: "unlock" }, "Time reopened for voting");
 }
 
 function cancelPlan() {
-  if (!confirm("Cancel this plan? Everyone will see it's off.")) return;
-  send({ type: "cancel" }, `${state.title} is cancelled 😭`, true);
+  openConfirm({
+    title: "Cancel this plan?",
+    body: "Everyone will see this is off. You can un-cancel later.",
+    confirmLabel: "Cancel plan",
+    confirmDanger: true,
+    onConfirm: () => {
+      send({ type: "cancel" }, `${mySelfName} cancelled the plan`);
+    },
+  });
 }
 
 function uncancelPlan() {
-  send({ type: "uncancel" }, `${state.title} is back on 😀`, true);
+  send({ type: "uncancel" }, `${mySelfName} brought the plan back`);
 }
 
 /* ─────────────────────────────────────────────────────────────
