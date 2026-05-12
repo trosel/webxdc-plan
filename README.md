@@ -4,6 +4,8 @@ I was not happy with the existing calendar or event apps available for [webxdc](
 
 I wanted something for casual group chats. Quick and easy planning for sidequests or events.
 
+You're meant to spawn a new app instance per plan. Every instance will be coherently labeled and all updates will include the plan title, so it's all organized nicely.
+
 ## Features
 
 - Voting on day/time. Creator can lock/unlock the time.
