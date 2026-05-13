@@ -969,14 +969,36 @@ function send(payload, info, opts) {
   // The notify field is per-update and routes to all recipients when "*".
   // Skip on the `create` update — recipients haven't opted in yet, and
   // the chat message itself already announces the plan's arrival.
+  //
+  // Coalescing: if the same person fires the same action-type repeatedly
+  // (most commonly: voting on multiple time slots in quick succession),
+  // only the first fires a notification. Subsequent updates still flow
+  // through as durable state — others see the votes in real time — but
+  // don't ping. The cooldown is per (sender, action-type) so a vote and
+  // an RSVP from the same person don't suppress each other.
   if (projected.notifyOnChanges && payload.type !== "create") {
-    const notifyText = opts.notify || infoLine;
-    if (notifyText) u.notify = { "*": notifyText };
+    const cooldownMs = (opts.notifyCooldownSec || 0) * 1000;
+    const cooldownKey = `${mySelfAddr}:${payload.type}`;
+    const now = Date.now();
+    const lastNotifiedAt = sentNotifyAt[cooldownKey] || 0;
+    const withinCooldown = cooldownMs > 0 && (now - lastNotifiedAt < cooldownMs);
+
+    if (!withinCooldown) {
+      const notifyText = opts.notify || infoLine;
+      if (notifyText) {
+        u.notify = { "*": notifyText };
+        sentNotifyAt[cooldownKey] = now;
+      }
+    }
   }
 
   payload.stage = stage;
   window.webxdc.sendUpdate(u, "");
 }
+
+// Tracks the last time WE fired a notify for a given (addr, action-type).
+// Local-only — never shared, doesn't need to survive reloads.
+const sentNotifyAt = {};
 
 function uid() {
   return Math.random().toString(36).slice(2, 10) + Date.now().toString(36).slice(-4);
@@ -1741,7 +1763,9 @@ function sendVote(slotId, response) {
   const info = finalResponse === null
     ? `${mySelfName} cleared a vote`
     : `${mySelfName} voted on a time`;
-  send({ type: "vote", slotId, response: finalResponse }, info);
+  // Generous cooldown: someone tapping through 3-5 time slots should only
+  // ping the group once. Re-ping if they come back to the poll later.
+  send({ type: "vote", slotId, response: finalResponse }, info, { notifyCooldownSec: 60 });
 }
 
 function sendRsvp(status) {
@@ -1749,6 +1773,9 @@ function sendRsvp(status) {
   live.justTapped = { kind: "rsvp", key: status };
   setTimeout(() => { live.justTapped = null; scheduleRender(); }, 500);
   const label = status === "going" ? "is in" : status === "maybe" ? "is a maybe" : "is out";
+  // No cooldown for RSVPs: if someone toggles going→maybe quickly, the
+  // notification text changes meaningfully and the group needs to see the
+  // final state. Better to risk a rare double-ping than show stale info.
   send({ type: "rsvp", status }, `${mySelfName} ${label}`);
 }
 
