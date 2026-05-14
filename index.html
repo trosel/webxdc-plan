@@ -229,6 +229,11 @@
     align-items: center;
   }
   .plan-meta .row { display: flex; align-items: center; gap: 8px; }
+  .plan-meta .row.tz-sub {
+    color: var(--ink-faint);
+    font-size: 12px;
+    margin-top: -2px;
+  }
   .plan-meta .ic { width: 14px; height: 14px; color: var(--accent); flex-shrink: 0; }
   .plan-notes {
     margin-top: 14px;
@@ -368,6 +373,32 @@
   .toggle-text { display: flex; flex-direction: column; gap: 3px; }
   .toggle-text strong { font-weight: 600; font-size: 14px; }
   .toggle-hint { color: var(--ink-dim); font-size: 12px; line-height: 1.4; }
+
+  /* Compact inline checkbox — for rare/opt-in settings that shouldn't
+     take real estate from the common path. No card, no hint text. */
+  .inline-toggle {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin: 10px 0 0;
+    padding: 0;
+    cursor: pointer;
+    font-size: 13px;
+    color: var(--ink-dim);
+    text-transform: none;
+    letter-spacing: normal;
+    font-weight: normal;
+  }
+  .inline-toggle input[type="checkbox"] {
+    width: 15px; height: 15px;
+    accent-color: var(--accent);
+    cursor: pointer;
+    margin: 0;
+    flex-shrink: 0;
+  }
+  .inline-toggle:has(input:checked) {
+    color: var(--ink);
+  }
 
   /* ─── notes content (linkified text) ─── */
   .plan-notes a {
@@ -752,12 +783,12 @@ function deriveStage(s) {
   if (s.cancelled) return "cancelled";
   if (s.lockedSlotId) {
     const slot = s.slots.find(x => x.id === s.lockedSlotId);
-    if (slot && new Date(slot.datetime) < new Date()) return "past";
+    if (slot && slotToDate(slot) < new Date()) return "past";
     return "confirmed";
   }
   // Single-time plans: if the slot is in the past, treat as past.
   if (!s.isPoll && s.slots[0]) {
-    if (new Date(s.slots[0].datetime) < new Date()) return "past";
+    if (slotToDate(s.slots[0]) < new Date()) return "past";
     return "confirmed";
   }
   return "voting"; // poll, no lock
@@ -791,7 +822,7 @@ function metadata(s) {
       const slot = s.lockedSlotId
         ? s.slots.find(x => x.id === s.lockedSlotId)
         : s.slots[0];
-      const dt = slot ? shortDate(slot.datetime) : "";
+      const dt = slot ? shortDate(slot) : "";
       summary = goingCount
         ? `${dt} · ${goingCount} going`
         : dt;
@@ -805,11 +836,16 @@ function metadata(s) {
   return { document: s.title || "", summary };
 }
 
-function shortDate(iso) {
-  const d = new Date(iso);
-  if (isNaN(d)) return "";
+function shortDate(slotOrIso) {
+  const slot = typeof slotOrIso === "string" ? { datetime: slotOrIso } : slotOrIso;
+  if (!slot || !slot.datetime) return "";
+  const d = slotToDate(slot);
+  if (!d || isNaN(d)) return "";
   const date = d.toLocaleDateString(undefined, { weekday: "short", month: "numeric", day: "numeric" });
   const time = d.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
+  // The tray summary stays compact: no "(your time)" tag — the host-time
+  // subtitle exists inside the app for clarification. The tray's job is to
+  // show identity, not to teach timezone semantics.
   return `${date} ${time}`;
 }
 
@@ -832,7 +868,7 @@ function applyUpdate(u) {
       state.title = p.title || "";
       state.location = p.location || "";
       state.notes = p.notes || "";
-      state.slots = (p.slots || []).map(s => ({ id: s.id, datetime: s.datetime }));
+      state.slots = (p.slots || []).map(s => ({ id: s.id, datetime: s.datetime, tz: s.tz || undefined }));
       state.isPoll = state.slots.length > 1;
       state.notifyOnChanges = !!p.notifyOnChanges;
       for (const s of state.slots) state.votes[s.id] = state.votes[s.id] || {};
@@ -847,7 +883,13 @@ function applyUpdate(u) {
         // Only allow editing slot times, not adding/removing slots post-creation.
         for (const incoming of p.slots) {
           const existing = state.slots.find(x => x.id === incoming.id);
-          if (existing) existing.datetime = incoming.datetime;
+          if (existing) {
+            if (incoming.datetime !== undefined) existing.datetime = incoming.datetime;
+            if ("tz" in incoming) {
+              if (incoming.tz) existing.tz = incoming.tz;
+              else delete existing.tz;
+            }
+          }
         }
       }
       break;
@@ -1097,26 +1139,114 @@ window.addEventListener("beforeunload", () => RT.leave());
    FORMATTING
    ───────────────────────────────────────────────────────────── */
 
-function fmtDateTime(iso) {
-  if (!iso) return "";
-  const d = new Date(iso);
-  if (isNaN(d)) return iso;
-  return d.toLocaleString(undefined, {
+// Timezone handling.
+//
+// A slot has shape: { id, datetime, tz? }
+//   - datetime: ISO-local string from <input type="datetime-local">,
+//     e.g. "2026-05-16T20:00" (no offset, no Z)
+//   - tz: IANA name like "America/New_York", or undefined for floating time
+//
+// Floating (no tz): `datetime` is interpreted in the viewer's local zone.
+//   Display: "Sat May 16, 8:00 PM" — same string everyone sees.
+// Anchored (tz set): `datetime` represents wall-clock time IN that zone.
+//   Display: viewer's local zone, with host's zone shown as subtitle when
+//   they differ.
+
+function getLocalTz() {
+  try { return Intl.DateTimeFormat().resolvedOptions().timeZone; }
+  catch (e) { return null; }
+}
+
+// Convert a wall-clock datetime ("2026-05-16T20:00") in a specific IANA zone
+// to a real Date instant. We compute it by finding the offset that zone
+// applies to that wall-clock time using Intl.DateTimeFormat.
+function wallClockInZoneToDate(localDt, tz) {
+  if (!tz) return new Date(localDt);
+  // Treat localDt as UTC first, then find the offset that tz would apply
+  // to that wall-clock moment, and subtract it to get the real UTC instant.
+  const naive = new Date(localDt + "Z"); // pretend it's UTC
+  if (isNaN(naive)) return new Date(NaN);
+  // Format that UTC moment in tz, then parse back what wall-clock the zone shows.
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: tz, year: "numeric", month: "2-digit", day: "2-digit",
+    hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false,
+  }).formatToParts(naive);
+  const get = t => parts.find(p => p.type === t)?.value;
+  const zoneShows = Date.UTC(+get("year"), +get("month") - 1, +get("day"),
+                              +get("hour") % 24, +get("minute"), +get("second"));
+  const offset = zoneShows - naive.getTime(); // how far ahead of UTC the zone is
+  return new Date(naive.getTime() - offset);
+}
+
+// Get a short TZ abbreviation for the host's own zone — used only in the
+// draft form's "Anchor to my timezone (PDT)" label, where the host is
+// looking at their own zone in their own locale (the case the runtime
+// handles best). Everywhere else in the UI we say "(your time)" instead.
+function tzShortName(tz, date) {
+  if (!tz) return "";
+  try {
+    const parts = new Intl.DateTimeFormat(undefined, {
+      timeZone: tz, timeZoneName: "short",
+    }).formatToParts(date || new Date());
+    return parts.find(p => p.type === "timeZoneName")?.value || "";
+  } catch (e) { return ""; }
+}
+
+// Slot → Date object representing the actual instant.
+function slotToDate(slot) {
+  if (!slot || !slot.datetime) return null;
+  return slot.tz ? wallClockInZoneToDate(slot.datetime, slot.tz) : new Date(slot.datetime);
+}
+
+function fmtDateTime(slotOrIso) {
+  const slot = typeof slotOrIso === "string" ? { datetime: slotOrIso } : slotOrIso;
+  if (!slot || !slot.datetime) return "";
+  const d = slotToDate(slot);
+  if (!d || isNaN(d)) return slot.datetime;
+  let s = d.toLocaleString(undefined, {
     weekday: "short", month: "short", day: "numeric",
     hour: "numeric", minute: "2-digit",
   });
+  if (slot.tz) {
+    const tz = tzShortName(getLocalTz(), d);
+    s += tz ? ` ${tz} (your time)` : " (your time)";
+  }
+  return s;
 }
-function fmtDate(iso) {
-  if (!iso) return "";
-  const d = new Date(iso);
-  if (isNaN(d)) return iso;
+function fmtDate(slotOrIso) {
+  const slot = typeof slotOrIso === "string" ? { datetime: slotOrIso } : slotOrIso;
+  if (!slot || !slot.datetime) return "";
+  const d = slotToDate(slot);
+  if (!d || isNaN(d)) return slot.datetime;
   return d.toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric" });
 }
-function fmtTime(iso) {
-  if (!iso) return "";
-  const d = new Date(iso);
-  if (isNaN(d)) return "";
-  return d.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
+function fmtTime(slotOrIso) {
+  const slot = typeof slotOrIso === "string" ? { datetime: slotOrIso } : slotOrIso;
+  if (!slot || !slot.datetime) return "";
+  const d = slotToDate(slot);
+  if (!d || isNaN(d)) return "";
+  let s = d.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
+  if (slot.tz) {
+    const tz = tzShortName(getLocalTz(), d);
+    s += tz ? ` ${tz} (your time)` : " (your time)";
+  }
+  return s;
+}
+
+// Host's view of the same slot, in host's zone. Used to render the small
+// "host time" subtitle when viewer is in a different zone.
+function fmtHostTime(slot) {
+  if (!slot || !slot.tz) return "";
+  const viewerTz = getLocalTz();
+  if (viewerTz === slot.tz) return ""; // same zone, don't duplicate
+  const d = slotToDate(slot);
+  if (!d || isNaN(d)) return "";
+  try {
+    return new Intl.DateTimeFormat(undefined, {
+      timeZone: slot.tz,
+      hour: "numeric", minute: "2-digit", timeZoneName: "short",
+    }).format(d);
+  } catch (e) { return ""; }
 }
 
 /* ─────────────────────────────────────────────────────────────
@@ -1126,7 +1256,7 @@ function fmtTime(iso) {
 function buildIcs() {
   const slot = state.slots.find(s => s.id === state.lockedSlotId) || state.slots[0];
   if (!slot) return "";
-  const start = new Date(slot.datetime);
+  const start = slotToDate(slot);
   const end = new Date(start.getTime() + 2 * 60 * 60 * 1000);
   const fmt = d => d.toISOString().replace(/[-:]/g, "").replace(/\.\d{3}/, "");
   const esc = s => (s || "").replace(/\\/g, "\\\\").replace(/\n/g, "\\n").replace(/,/g, "\\,").replace(/;/g, "\\;");
@@ -1298,6 +1428,7 @@ let draftState = {
   title: "", location: "", notes: "",
   slots: [{ id: uid(), datetime: "" }],
   notifyOnChanges: false,
+  useExplicitTz: false,
 };
 
 function renderDraft(root) {
@@ -1308,7 +1439,7 @@ function renderDraft(root) {
   card.appendChild(el("label", null, "What's the plan"));
   card.appendChild(el("input", {
     type: "text",
-    placeholder: "Dinner at Marcy's",
+    placeholder: "Give it a name",
     value: draftState.title,
     oninput: e => { draftState.title = e.target.value; validateDraft(); }
   }));
@@ -1348,9 +1479,31 @@ function renderDraft(root) {
     onclick: () => { draftState.slots.push({ id: uid(), datetime: "" }); renderSlots(); validateDraft(); }
   }, "+ Propose another time"));
 
+  // Timezone toggle — small inline control, since most plans don't need it.
+  const tzInline = el("label", { class: "inline-toggle" });
+  const tzCb = el("input", {
+    type: "checkbox",
+    onchange: e => { draftState.useExplicitTz = e.target.checked; renderTzInlineText(); },
+  });
+  if (draftState.useExplicitTz) tzCb.setAttribute("checked", "checked");
+  tzInline.appendChild(tzCb);
+  const tzInlineLabel = el("span");
+  function renderTzInlineText() {
+    tzInlineLabel.textContent = "";
+    if (draftState.useExplicitTz) {
+      const tzShort = tzShortName(getLocalTz(), new Date());
+      tzInlineLabel.textContent = `Anchor to my timezone (${tzShort || "local"})`;
+    } else {
+      tzInlineLabel.textContent = "Anchor to my timezone";
+    }
+  }
+  renderTzInlineText();
+  tzInline.appendChild(tzInlineLabel);
+  card.appendChild(tzInline);
+
   card.appendChild(el("label", null, "Notes"));
   card.appendChild(el("textarea", {
-    placeholder: "Bring a side dish. Park on the street.",
+    placeholder: "Anything people should know",
     oninput: e => { draftState.notes = e.target.value; }
   }, draftState.notes));
 
@@ -1382,7 +1535,12 @@ function renderDraft(root) {
 }
 
 function createPlan() {
-  const slots = draftState.slots.filter(s => s.datetime).map(s => ({ id: s.id, datetime: s.datetime }));
+  const hostTz = draftState.useExplicitTz ? getLocalTz() : null;
+  const slots = draftState.slots.filter(s => s.datetime).map(s => {
+    const slot = { id: s.id, datetime: s.datetime };
+    if (hostTz) slot.tz = hostTz;
+    return slot;
+  });
   if (!slots.length || !draftState.title.trim()) return;
   send({
     type: "create",
@@ -1402,11 +1560,13 @@ function openEditModal() {
   if (modalEl) return;
   RT.broadcast({ kind: "editing-open", field: "plan" });
 
+  const initiallyAnchored = !!(state.slots[0] && state.slots[0].tz);
   const draft = {
     title: state.title,
     location: state.location,
     notes: state.notes,
     slots: state.slots.map(s => ({ ...s })),
+    useExplicitTz: initiallyAnchored,
   };
 
   modalEl = el("div", { class: "modal-overlay", onclick: e => { if (e.target === modalEl) closeEditModal(); } });
@@ -1440,6 +1600,27 @@ function openEditModal() {
   });
   modal.appendChild(slotsWrap);
 
+  // TZ toggle inside edit modal — compact inline control.
+  const tzInline = el("label", { class: "inline-toggle" });
+  const tzCb = el("input", {
+    type: "checkbox",
+    onchange: e => { draft.useExplicitTz = e.target.checked; renderTzInlineText(); },
+  });
+  if (draft.useExplicitTz) tzCb.setAttribute("checked", "checked");
+  tzInline.appendChild(tzCb);
+  const tzInlineLabel = el("span");
+  function renderTzInlineText() {
+    if (draft.useExplicitTz) {
+      const tzShort = tzShortName(getLocalTz(), new Date());
+      tzInlineLabel.textContent = `Anchor to my timezone (${tzShort || "local"})`;
+    } else {
+      tzInlineLabel.textContent = "Anchor to my timezone";
+    }
+  }
+  renderTzInlineText();
+  tzInline.appendChild(tzInlineLabel);
+  modal.appendChild(tzInline);
+
   modal.appendChild(el("label", null, "Notes"));
   modal.appendChild(el("textarea", {
     oninput: e => draft.notes = e.target.value,
@@ -1454,8 +1635,24 @@ function openEditModal() {
       if (draft.title.trim() !== state.title) changed.title = draft.title.trim();
       if (draft.location.trim() !== state.location) changed.location = draft.location.trim();
       if (draft.notes.trim() !== state.notes) changed.notes = draft.notes.trim();
-      const changedSlots = draft.slots.filter((s, i) => s.datetime !== state.slots[i].datetime);
-      if (changedSlots.length) changed.slots = changedSlots;
+
+      // Compute slot changes including TZ mode flip.
+      const hostTz = draft.useExplicitTz ? getLocalTz() : null;
+      const slotChanges = [];
+      draft.slots.forEach((s, i) => {
+        const orig = state.slots[i];
+        const newTz = draft.useExplicitTz ? hostTz : null;
+        const dtChanged = s.datetime !== orig.datetime;
+        const tzChanged = (orig.tz || null) !== newTz;
+        if (dtChanged || tzChanged) {
+          const out = { id: s.id };
+          if (dtChanged) out.datetime = s.datetime;
+          if (tzChanged) out.tz = newTz || null; // null = strip
+          slotChanges.push(out);
+        }
+      });
+      if (slotChanges.length) changed.slots = slotChanges;
+
       if (Object.keys(changed).length) {
         send({ type: "edit", ...changed }, `${mySelfName} edited the plan`);
       }
@@ -1564,16 +1761,19 @@ function renderPlan(root) {
 
   const meta = el("div", { class: "plan-meta" });
   const lockedSlot = state.slots.find(s => s.id === state.lockedSlotId);
-  if (lockedSlot) {
+  const displaySlot = lockedSlot || (!state.isPoll ? state.slots[0] : null);
+  if (displaySlot) {
     const row = el("div", { class: "row" });
     row.appendChild(iconSpan(ICON_CLOCK));
-    row.appendChild(document.createTextNode(fmtDate(lockedSlot.datetime) + " · " + fmtTime(lockedSlot.datetime)));
+    row.appendChild(document.createTextNode(fmtDate(displaySlot) + " · " + fmtTime(displaySlot)));
     meta.appendChild(row);
-  } else if (!state.isPoll && state.slots[0]) {
-    const row = el("div", { class: "row" });
-    row.appendChild(iconSpan(ICON_CLOCK));
-    row.appendChild(document.createTextNode(fmtDate(state.slots[0].datetime) + " · " + fmtTime(state.slots[0].datetime)));
-    meta.appendChild(row);
+    // If anchored to a TZ different from viewer's, show host time subtitle.
+    const hostTime = fmtHostTime(displaySlot);
+    if (hostTime) {
+      const sub = el("div", { class: "row tz-sub" });
+      sub.appendChild(document.createTextNode(`(${hostTime} host time)`));
+      meta.appendChild(sub);
+    }
   }
   if (state.location) {
     const row = el("div", { class: "row" });
@@ -1613,7 +1813,7 @@ function renderPlan(root) {
 
       const slotEl = el("div", { class: "vote-slot" + (leaderIds.includes(slot.id) && leadCount > 0 ? " winning" : "") });
       const head = el("div", { class: "vote-slot-header" });
-      head.appendChild(el("div", { class: "vote-slot-time" }, fmtDateTime(slot.datetime)));
+      head.appendChild(el("div", { class: "vote-slot-time" }, fmtDateTime(slot)));
 
       // Build a count line that's honest about all responses, not just yeses.
       const parts = [];
@@ -1793,7 +1993,7 @@ function lockSlot(slotId) {
   }
   showToast(autoCount ? `Locked in · ${autoCount} auto-RSVP'd` : "Locked in");
   setTimeout(() => { live.justLocked = false; scheduleRender(); }, 1300);
-  send({ type: "lock", slotId }, `Time locked: ${fmtDateTime(slot.datetime)}`);
+  send({ type: "lock", slotId }, `Time locked: ${fmtDateTime(slot)}`);
 }
 
 function unlockPlan() {
