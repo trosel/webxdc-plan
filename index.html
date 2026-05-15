@@ -618,6 +618,161 @@
     100% { transform: scale(1); }
   }
 
+  /* ─── bringing list ─── */
+  .bringing-list {
+    display: flex; flex-direction: column;
+    gap: 6px;
+    margin-bottom: 12px;
+  }
+  .bringing-empty {
+    color: var(--ink-faint);
+    font-size: 13px;
+    font-style: italic;
+    text-align: center;
+    padding: 12px 0;
+  }
+  .bringing-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    background: var(--bg-elev);
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    padding: 8px 10px;
+    transition: border-color .15s, background .15s;
+  }
+  .bringing-row.unclaimed {
+    border-style: dashed;
+    background: transparent;
+  }
+  .bringing-row.mine {
+    border-color: var(--going);
+    background: linear-gradient(135deg, rgba(95,163,122,.08), transparent);
+  }
+  .bringing-row-left {
+    display: flex; align-items: center; gap: 10px;
+    flex: 1; min-width: 0;
+  }
+  .bringing-slot-empty {
+    width: 26px; height: 26px;
+    border-radius: 50%;
+    border: 1.5px dashed var(--ink-faint);
+    color: var(--ink-faint);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 13px;
+    font-weight: 600;
+    flex-shrink: 0;
+  }
+  .bringing-row-left .avatar { width: 26px; height: 26px; font-size: 11px; }
+  .bringing-row-label {
+    display: flex; flex-direction: column;
+    gap: 1px;
+    min-width: 0;
+  }
+  .bringing-label-text {
+    font-size: 14px;
+    color: var(--ink);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .bringing-claimer-name {
+    font-size: 11px;
+    color: var(--ink-faint);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .bringing-row-actions {
+    display: flex; align-items: center; gap: 4px;
+    flex-shrink: 0;
+  }
+  .bringing-claim-btn {
+    background: var(--going);
+    border: 1px solid var(--going);
+    color: #fff;
+    padding: 6px 10px;
+    border-radius: 8px;
+    font-family: inherit;
+    font-size: 12px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: transform .1s;
+  }
+  .bringing-claim-btn:active { transform: scale(.96); }
+  .bringing-unclaim-btn {
+    background: transparent;
+    border: 1px solid var(--line);
+    color: var(--ink-dim);
+    padding: 5px 9px;
+    border-radius: 8px;
+    font-family: inherit;
+    font-size: 11px;
+    cursor: pointer;
+  }
+  .bringing-remove-btn {
+    background: transparent;
+    border: 1px solid var(--line);
+    color: var(--ink-faint);
+    width: 26px; height: 26px;
+    padding: 0;
+    border-radius: 8px;
+    font-size: 16px;
+    cursor: pointer;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .bringing-add-row, .bringing-add-need {
+    display: flex; gap: 6px;
+    margin-top: 8px;
+  }
+  .bringing-add-row input, .bringing-add-need input {
+    flex: 1;
+    background: var(--bg);
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    padding: 9px 12px;
+    color: var(--ink);
+    font-family: inherit;
+    font-size: 14px;
+  }
+  .bringing-add-row input:focus, .bringing-add-need input:focus {
+    outline: none;
+    border-color: var(--accent);
+  }
+  .bringing-add-btn {
+    background: var(--accent);
+    border: 1px solid var(--accent);
+    color: #14171a;
+    padding: 9px 16px;
+    border-radius: 10px;
+    font-family: inherit;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+  }
+  .bringing-add-btn:active { transform: scale(.97); }
+  .bringing-add-need { margin-top: 6px; }
+  .bringing-add-need input {
+    font-size: 13px;
+    border-style: dashed;
+    color: var(--ink-dim);
+  }
+
+  /* Bringing draft editor (in create form) */
+  .bringing-draft-wrap { margin-top: 8px; }
+  .sub-label {
+    display: block;
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: .1em;
+    color: var(--ink-faint);
+    margin: 6px 0 6px;
+    font-weight: 600;
+  }
+  .bringing-draft-list { display: flex; flex-direction: column; gap: 6px; margin-bottom: 6px; }
+  .bringing-draft-row { display: flex; gap: 6px; align-items: center; }
+  .bringing-draft-row input { flex: 1; }
+
   /* RSVP/vote button "ignite" pulse when activated */
   .rsvp-btn.just-tapped, .vote-btn.just-tapped {
     animation: btnpulse .42s ease-out;
@@ -751,6 +906,8 @@ const state = {
   lockedSlotId: null,
   cancelled: false,
   notifyOnChanges: false,
+  bringingEnabled: false,
+  bringingItems: [],   // [{id, label, claimer, claimerName, addedBy}]
   votes: {},
   rsvps: {},
   people: {},
@@ -871,6 +1028,16 @@ function applyUpdate(u) {
       state.slots = (p.slots || []).map(s => ({ id: s.id, datetime: s.datetime, tz: s.tz || undefined }));
       state.isPoll = state.slots.length > 1;
       state.notifyOnChanges = !!p.notifyOnChanges;
+      state.bringingEnabled = !!p.bringingEnabled;
+      if (Array.isArray(p.bringingItems)) {
+        state.bringingItems = p.bringingItems.map(it => ({
+          id: it.id,
+          label: it.label || "",
+          claimer: it.claimer || null,
+          claimerName: it.claimerName || null,
+          addedBy: senderAddr,
+        }));
+      }
       for (const s of state.slots) state.votes[s.id] = state.votes[s.id] || {};
       break;
 
@@ -879,6 +1046,7 @@ function applyUpdate(u) {
       if (typeof p.title === "string") state.title = p.title;
       if (typeof p.location === "string") state.location = p.location;
       if (typeof p.notes === "string") state.notes = p.notes;
+      if (typeof p.bringingEnabled === "boolean") state.bringingEnabled = p.bringingEnabled;
       if (Array.isArray(p.slots)) {
         // Only allow editing slot times, not adding/removing slots post-creation.
         for (const incoming of p.slots) {
@@ -962,6 +1130,62 @@ function applyUpdate(u) {
       if (!state.created || senderAddr !== state.host.addr) break;
       state.cancelled = false;
       break;
+
+    case "bringing-add":
+      if (!state.created) break;
+      if (!p.id || !p.label) break;
+      if (state.bringingItems.find(it => it.id === p.id)) break; // dedupe
+      state.bringingItems.push({
+        id: p.id,
+        label: String(p.label).slice(0, 80),
+        claimer: p.claimer || null,
+        claimerName: p.claimerName || null,
+        addedBy: senderAddr,
+      });
+      break;
+
+    case "bringing-remove": {
+      if (!state.created) break;
+      const idx = state.bringingItems.findIndex(it => it.id === p.id);
+      if (idx < 0) break;
+      const item = state.bringingItems[idx];
+      // Only the item's author or the host can remove it.
+      if (senderAddr !== item.addedBy && senderAddr !== state.host.addr) break;
+      state.bringingItems.splice(idx, 1);
+      break;
+    }
+
+    case "bringing-edit-label": {
+      if (!state.created || senderAddr !== state.host.addr) break;
+      const item = state.bringingItems.find(it => it.id === p.id);
+      if (!item) break;
+      if (typeof p.label === "string") item.label = p.label.slice(0, 80);
+      break;
+    }
+
+    case "bringing-claim": {
+      if (!state.created) break;
+      const item = state.bringingItems.find(it => it.id === p.id);
+      if (!item) break;
+      // Allow claim if currently unclaimed, OR if you're already the claimer
+      // (idempotent), OR if you're the host overriding a claim.
+      if (!item.claimer || item.claimer === senderAddr || senderAddr === state.host.addr) {
+        item.claimer = senderAddr;
+        item.claimerName = senderName;
+      }
+      break;
+    }
+
+    case "bringing-unclaim": {
+      if (!state.created) break;
+      const item = state.bringingItems.find(it => it.id === p.id);
+      if (!item) break;
+      if (item.claimer === senderAddr || senderAddr === state.host.addr) {
+        item.claimer = null;
+        item.claimerName = null;
+      }
+      break;
+    }
   }
 }
 
@@ -1429,6 +1653,8 @@ let draftState = {
   slots: [{ id: uid(), datetime: "" }],
   notifyOnChanges: false,
   useExplicitTz: false,
+  bringingEnabled: false,
+  bringingItems: [],   // [{id, label}] — pre-declared needs added by host
 };
 
 function renderDraft(root) {
@@ -1501,6 +1727,49 @@ function renderDraft(root) {
   tzInline.appendChild(tzInlineLabel);
   card.appendChild(tzInline);
 
+  // Bringing-list toggle. When on, host can pre-declare items the group
+  // needs (drinks, dessert, etc). Whether or not they pre-fill, members
+  // can also add their own items later.
+  const bringingToggle = el("label", { class: "inline-toggle" });
+  const bringingCb = el("input", {
+    type: "checkbox",
+    onchange: e => { draftState.bringingEnabled = e.target.checked; renderBringingDraft(); },
+  });
+  if (draftState.bringingEnabled) bringingCb.setAttribute("checked", "checked");
+  bringingToggle.appendChild(bringingCb);
+  bringingToggle.appendChild(el("span", null, "People bringing things"));
+  card.appendChild(bringingToggle);
+
+  // Optional pre-declared needs (hidden until checkbox is on).
+  const bringingDraftWrap = el("div", { class: "bringing-draft-wrap" });
+  card.appendChild(bringingDraftWrap);
+  function renderBringingDraft() {
+    bringingDraftWrap.innerHTML = "";
+    if (!draftState.bringingEnabled) return;
+    bringingDraftWrap.appendChild(el("label", { class: "sub-label" }, "What's needed (optional)"));
+    const list = el("div", { class: "bringing-draft-list" });
+    draftState.bringingItems.forEach((item, i) => {
+      const row = el("div", { class: "bringing-draft-row" });
+      row.appendChild(el("input", {
+        type: "text",
+        placeholder: "e.g. drinks, dessert, plates",
+        value: item.label,
+        oninput: e => { draftState.bringingItems[i].label = e.target.value; },
+      }));
+      row.appendChild(el("button", {
+        class: "slot-remove",
+        onclick: () => { draftState.bringingItems.splice(i, 1); renderBringingDraft(); },
+      }, "×"));
+      list.appendChild(row);
+    });
+    bringingDraftWrap.appendChild(list);
+    bringingDraftWrap.appendChild(el("button", {
+      class: "add-time",
+      onclick: () => { draftState.bringingItems.push({ id: uid(), label: "" }); renderBringingDraft(); },
+    }, "+ Add a need"));
+  }
+  renderBringingDraft();
+
   card.appendChild(el("label", null, "Notes"));
   card.appendChild(el("textarea", {
     placeholder: "Anything people should know",
@@ -1542,6 +1811,13 @@ function createPlan() {
     return slot;
   });
   if (!slots.length || !draftState.title.trim()) return;
+
+  const bringingItems = draftState.bringingEnabled
+    ? draftState.bringingItems
+        .map(it => ({ id: it.id, label: (it.label || "").trim(), claimer: null, claimerName: null }))
+        .filter(it => it.label)
+    : [];
+
   send({
     type: "create",
     title: draftState.title.trim(),
@@ -1549,6 +1825,8 @@ function createPlan() {
     notes: draftState.notes.trim(),
     slots,
     notifyOnChanges: !!draftState.notifyOnChanges,
+    bringingEnabled: !!draftState.bringingEnabled,
+    bringingItems,
   }, `${mySelfName} started a plan: ${draftState.title.trim()}`);
 }
 
@@ -1567,6 +1845,7 @@ function openEditModal() {
     notes: state.notes,
     slots: state.slots.map(s => ({ ...s })),
     useExplicitTz: initiallyAnchored,
+    bringingEnabled: !!state.bringingEnabled,
   };
 
   modalEl = el("div", { class: "modal-overlay", onclick: e => { if (e.target === modalEl) closeEditModal(); } });
@@ -1621,6 +1900,17 @@ function openEditModal() {
   tzInline.appendChild(tzInlineLabel);
   modal.appendChild(tzInline);
 
+  // Bringing-list toggle in edit modal — host can flip it on/off.
+  const bringingInline = el("label", { class: "inline-toggle" });
+  const bringingCb = el("input", {
+    type: "checkbox",
+    onchange: e => { draft.bringingEnabled = e.target.checked; },
+  });
+  if (draft.bringingEnabled) bringingCb.setAttribute("checked", "checked");
+  bringingInline.appendChild(bringingCb);
+  bringingInline.appendChild(el("span", null, "People bringing things"));
+  modal.appendChild(bringingInline);
+
   modal.appendChild(el("label", null, "Notes"));
   modal.appendChild(el("textarea", {
     oninput: e => draft.notes = e.target.value,
@@ -1635,6 +1925,7 @@ function openEditModal() {
       if (draft.title.trim() !== state.title) changed.title = draft.title.trim();
       if (draft.location.trim() !== state.location) changed.location = draft.location.trim();
       if (draft.notes.trim() !== state.notes) changed.notes = draft.notes.trim();
+      if (draft.bringingEnabled !== state.bringingEnabled) changed.bringingEnabled = draft.bringingEnabled;
 
       // Compute slot changes including TZ mode flip.
       const hostTz = draft.useExplicitTz ? getLocalTz() : null;
@@ -1911,6 +2202,12 @@ function renderPlan(root) {
     if (not_going.length && !isPast) root.appendChild(renderRsvpGroup("Can't make it", not_going, true));
   }
 
+  // Bringing list — shown when enabled and the plan is settled (same gate
+  // as RSVPs). Hidden during voting (no time = nothing to bring to yet).
+  if (state.bringingEnabled && !state.cancelled && !isVoting) {
+    root.appendChild(renderBringingList(isPast));
+  }
+
   // footer
   const footer = el("div", { class: "footer-actions" });
   if (!isPast && (state.lockedSlotId || (!state.isPoll && state.slots.length === 1))) {
@@ -1945,6 +2242,127 @@ function renderRsvpGroup(title, list, compact) {
   }
   group.appendChild(listEl);
   return group;
+}
+
+function renderBringingList(isPast) {
+  const wrap = el("div");
+  wrap.appendChild(el("div", { class: "divider" }, el("span", null, isPast ? "What people brought" : "Who's bringing what")));
+
+  const isHost = mySelfAddr === state.host.addr;
+  const list = el("div", { class: "bringing-list" });
+
+  if (!state.bringingItems.length) {
+    list.appendChild(el("div", { class: "bringing-empty" },
+      isPast ? "Nothing was claimed." : "Nothing on the list yet."));
+  }
+
+  for (const item of state.bringingItems) {
+    const isMine = item.claimer === mySelfAddr;
+    const isUnclaimed = !item.claimer;
+    const canRemove = !isPast && (mySelfAddr === item.addedBy || isHost);
+
+    const row = el("div", {
+      class: "bringing-row" + (isUnclaimed ? " unclaimed" : "") + (isMine ? " mine" : ""),
+    });
+
+    // Left: avatar (or empty slot for unclaimed) + label
+    const left = el("div", { class: "bringing-row-left" });
+    if (item.claimer) {
+      left.appendChild(avatar(item.claimer, item.claimerName || item.claimer, 26));
+    } else {
+      left.appendChild(el("div", { class: "bringing-slot-empty" }, "?"));
+    }
+    const labelWrap = el("div", { class: "bringing-row-label" });
+    labelWrap.appendChild(el("div", { class: "bringing-label-text" }, item.label));
+    if (item.claimer) {
+      labelWrap.appendChild(el("div", { class: "bringing-claimer-name" }, item.claimerName || item.claimer));
+    } else {
+      labelWrap.appendChild(el("div", { class: "bringing-claimer-name" }, "Unclaimed"));
+    }
+    left.appendChild(labelWrap);
+    row.appendChild(left);
+
+    // Right: action buttons
+    if (!isPast) {
+      const actions = el("div", { class: "bringing-row-actions" });
+      if (isUnclaimed) {
+        actions.appendChild(el("button", {
+          class: "bringing-claim-btn",
+          onclick: () => claimBringing(item.id),
+        }, "I'll bring it"));
+      } else if (isMine) {
+        actions.appendChild(el("button", {
+          class: "bringing-unclaim-btn",
+          title: "Unclaim",
+          onclick: () => unclaimBringing(item.id),
+        }, "Unclaim"));
+      }
+      if (canRemove) {
+        actions.appendChild(el("button", {
+          class: "bringing-remove-btn",
+          title: "Remove",
+          onclick: () => removeBringing(item.id, item.label),
+        }, "×"));
+      }
+      if (actions.children.length) row.appendChild(actions);
+    }
+
+    list.appendChild(row);
+  }
+
+  wrap.appendChild(list);
+
+  // Inline "add my own" row
+  if (!isPast) {
+    const addRow = el("div", { class: "bringing-add-row" });
+    const input = el("input", {
+      type: "text",
+      placeholder: "I'll bring…",
+      onkeydown: e => {
+        if (e.key === "Enter") {
+          e.preventDefault();
+          if (input.value.trim()) {
+            addBringing(input.value.trim(), /*claimSelf*/ true);
+            input.value = "";
+          }
+        }
+      },
+    });
+    const addBtn = el("button", {
+      class: "bringing-add-btn",
+      onclick: () => {
+        if (input.value.trim()) {
+          addBringing(input.value.trim(), /*claimSelf*/ true);
+          input.value = "";
+        }
+      },
+    }, "Add");
+    addRow.appendChild(input);
+    addRow.appendChild(addBtn);
+    wrap.appendChild(addRow);
+
+    // Host can also add an unclaimed "need"
+    if (isHost) {
+      const addNeedRow = el("div", { class: "bringing-add-need" });
+      const needInput = el("input", {
+        type: "text",
+        placeholder: "Or add a need for someone to claim…",
+        onkeydown: e => {
+          if (e.key === "Enter") {
+            e.preventDefault();
+            if (needInput.value.trim()) {
+              addBringing(needInput.value.trim(), /*claimSelf*/ false);
+              needInput.value = "";
+            }
+          }
+        },
+      });
+      addNeedRow.appendChild(needInput);
+      wrap.appendChild(addNeedRow);
+    }
+  }
+
+  return wrap;
 }
 
 /* ─────────────────────────────────────────────────────────────
@@ -2015,6 +2433,48 @@ function cancelPlan() {
 
 function uncancelPlan() {
   send({ type: "uncancel" }, `${mySelfName} brought the plan back`);
+}
+
+function addBringing(label, claimSelf) {
+  const id = uid();
+  const payload = { type: "bringing-add", id, label };
+  if (claimSelf) {
+    payload.claimer = mySelfAddr;
+    payload.claimerName = mySelfName;
+  }
+  const info = claimSelf
+    ? `${mySelfName} is bringing ${label}`
+    : `${mySelfName} added: ${label}`;
+  send(payload, info, { notifyCooldownSec: 30 });
+}
+
+function claimBringing(itemId) {
+  const item = state.bringingItems.find(it => it.id === itemId);
+  if (!item) return;
+  send({ type: "bringing-claim", id: itemId },
+    `${mySelfName} is bringing ${item.label}`,
+    { notifyCooldownSec: 30 });
+}
+
+function unclaimBringing(itemId) {
+  const item = state.bringingItems.find(it => it.id === itemId);
+  if (!item) return;
+  send({ type: "bringing-unclaim", id: itemId },
+    `${mySelfName} unclaimed ${item.label}`,
+    { notifyCooldownSec: 30 });
+}
+
+function removeBringing(itemId, label) {
+  openConfirm({
+    title: "Remove this?",
+    body: `Remove "${label}" from the bringing list?`,
+    confirmLabel: "Remove",
+    confirmDanger: true,
+    onConfirm: () => {
+      send({ type: "bringing-remove", id: itemId },
+        `${mySelfName} removed: ${label}`);
+    },
+  });
 }
 
 /* ─────────────────────────────────────────────────────────────
